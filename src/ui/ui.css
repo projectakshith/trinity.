@@ -27,7 +27,7 @@
 
 .chip-btn:hover { border-color: var(--border-strong); color: var(--text); }
 
-.chip-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--amber); }
+.chip-glyph { color: var(--text-3); }
 
 .notice {
   display: flex;
@@ -185,7 +185,7 @@
   color: var(--text-2);
 }
 
-.tool-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.tool-glyph { color: var(--text-3); font-size: 13px; line-height: 1; }
 
 .round-btn {
   display: grid;

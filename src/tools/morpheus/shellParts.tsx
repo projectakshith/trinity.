@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
 import { bucketOf, type SessionBucket } from '@/lib/format';
+import { glyphs } from '@/ui/glyphs';
 import { Icon } from '@/ui/Icon';
 import type { Ask } from '../types';
 import { MORPHEUS_HREF, sessionHref, useMorpheus } from './state';
@@ -13,8 +14,14 @@ const HOME_RECENTS = 3;
 
 export function NavDot() {
   const { link, connection } = useMorpheus();
-  const state = !link ? 'off' : connection === 'open' ? 'on' : connection === 'unauthorized' ? 'bad' : 'wait';
-  return <span className={`status-dot ${state}`} />;
+  const [glyph, tone] = !link
+    ? [glyphs.bulletOpen, 'off']
+    : connection === 'open'
+      ? [glyphs.bullet, 'on']
+      : connection === 'unauthorized'
+        ? [glyphs.error, 'bad']
+        : [glyphs.running, 'wait'];
+  return <span className={`status-glyph ${tone}`}>{glyph}</span>;
 }
 
 export function CardStatus() {
@@ -52,7 +59,7 @@ export function SidebarRecents() {
           {items.map((s) => (
             <Link key={s.id} href={sessionHref(s.id)} className={`recent${onMorpheus && s.id === active ? ' active' : ''}`}>
               <span className="recent-title">{s.title}</span>
-              {s.status === 'running' ? <span className="running-dot" /> : null}
+              {s.status === 'running' ? <span className="running-glyph">{glyphs.running}</span> : null}
             </Link>
           ))}
         </section>

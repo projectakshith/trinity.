@@ -30,4 +30,4 @@
 
 .tool-status { grid-column: 2; font-size: 12px; color: var(--text-3); }
 
-.tool-status.on { color: var(--green); }
+.tool-status.on { color: var(--text-2); }

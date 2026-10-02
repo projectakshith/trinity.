@@ -6,6 +6,7 @@ import { fmtTokens } from '@/lib/format';
 import { TopBar } from '@/shell/TopBar';
 import type { Autocomplete } from '@/ui/Composer';
 import { Composer } from '@/ui/Composer';
+import { glyphs } from '@/ui/glyphs';
 import { Icon } from '@/ui/Icon';
 import { useClient, useSession } from './client';
 import { Conversation } from './Conversation';
@@ -83,7 +84,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           <span className="chip chip-branch" title={snapshot.cwd}>
             <Icon name="branch" size={13} />
             {snapshot.workspace.branch}
-            {snapshot.workspace.gitStatus && snapshot.workspace.gitStatus !== 'clean' ? <span className="chip-dot" /> : null}
+            {snapshot.workspace.gitStatus && snapshot.workspace.gitStatus !== 'clean' ? <span className="chip-glyph">{glyphs.gitDiff}</span> : null}
           </span>
         ) : null}
         {snapshot ? (

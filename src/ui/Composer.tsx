@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent } from 'react';
+import { glyphs } from './glyphs';
 import { Icon } from './Icon';
 
 export interface Suggestion {
@@ -170,7 +171,7 @@ export function Composer({ autocomplete, placeholder, running = false, disabled 
         <div className="composer-bar">
           {toolLabel ? (
             <span className="tool-chip">
-              <span className="tool-dot" />
+              <span className="tool-glyph">{glyphs.chip}</span>
               {toolLabel}
             </span>
           ) : null}

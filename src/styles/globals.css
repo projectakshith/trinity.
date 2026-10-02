@@ -180,11 +180,6 @@ button.step:hover:not(:disabled) { color: var(--text); }
   to { background-position: -100% 0; }
 }
 
-@keyframes breathe {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 1; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before { animation: none !important; transition: none !important; }
