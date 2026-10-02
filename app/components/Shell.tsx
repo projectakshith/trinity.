@@ -1,162 +1,177 @@
 /*
- * Main layout: sessions | feed | activity, with header, status bar and composer. Collapses to one column on phones.
+ * Trinity's frame: sidebar + the active view. Morpheus is one tool among (eventually) several.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import type { SessionListItem } from 'morpheus/client';
-import { loadLastSession, saveLastSession } from '../lib/link';
-import { useClient, useConnectionState, useSession } from '../lib/morpheus';
-import { Activity } from './Activity';
-import { Composer } from './Composer';
-import { Feed, Hero } from './Feed';
-import { Header } from './Header';
-import { ModelPicker } from './ModelPicker';
-import { Sessions } from './Sessions';
-import { StatusBar } from './StatusBar';
+import { loadLastSession, saveLastSession, type DaemonLink } from '../lib/link';
+import { useConnectionState, useMaybeClient } from '../lib/morpheus';
+import { Automations } from './Automations';
+import { ConnectMorpheus } from './ConnectMorpheus';
+import { Home } from './Home';
+import { MorpheusView } from './MorpheusView';
+import { Sidebar, type View } from './Sidebar';
+import { TopBar } from './TopBar';
 
-type Drawer = 'sessions' | 'activity' | null;
+const VIEW_KEY = 'trinity.view';
+const NARROW = '(max-width: 860px)';
 
-export function Shell({ onUnlink }: { onUnlink: () => void }) {
-  const client = useClient();
+function loadView(): View {
+  try {
+    const v = localStorage.getItem(VIEW_KEY);
+    return v === 'morpheus' || v === 'automations' ? v : 'home';
+  } catch {
+    return 'home';
+  }
+}
+
+interface ShellProps {
+  link: DaemonLink | null;
+  lastLink: DaemonLink | null;
+  onLink: (link: DaemonLink) => void;
+  onUnlink: () => void;
+}
+
+export function Shell({ link, lastLink, onLink, onUnlink }: ShellProps) {
+  const client = useMaybeClient();
   const connection = useConnectionState();
+  const [view, setView] = useState<View>(loadView);
   const [sessionId, setSessionId] = useState<string | null>(() => loadLastSession());
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
-  const [drawer, setDrawer] = useState<Drawer>(null);
-  const [pickingModel, setPickingModel] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const { snapshot, store } = useSession(sessionId);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const selectSession = useCallback((id: string | null) => {
-    setSessionId(id);
-    saveLastSession(id);
-    setDrawer(null);
+  const navigate = useCallback((next: View) => {
+    setView(next);
+    setDrawerOpen(false);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      /* Storage unavailable: view just won't persist. */
+    }
   }, []);
 
-  const refreshSessions = useCallback(
-    () =>
-      client
-        .request('session.list', { limit: 50 })
-        .then((res) => {
-          setSessions(res.sessions);
-          return res.sessions;
-        })
-        .catch(() => [] as SessionListItem[]),
-    [client]
+  const selectSession = useCallback(
+    (id: string | null) => {
+      setSessionId(id);
+      saveLastSession(id);
+      if (id) navigate('morpheus');
+    },
+    [navigate]
   );
 
-  const createSession = useCallback(() => {
-    client
-      .request('session.create', {})
-      .then(({ session }) => {
-        selectSession(session.id);
-        void refreshSessions();
-      })
-      .catch((err: Error) => setNotice(err.message));
-  }, [client, selectSession, refreshSessions]);
+  const refreshSessions = useCallback(async () => {
+    if (!client) return [] as SessionListItem[];
+    try {
+      const { sessions: list } = await client.request('session.list', { limit: 60 });
+      setSessions(list);
+      return list;
+    } catch {
+      return [] as SessionListItem[];
+    }
+  }, [client]);
 
-  /* On (re)connect: refresh the list and make sure we're looking at a session that exists. */
+  const createSession = useCallback(async () => {
+    if (!client) return null;
+    const { session } = await client.request('session.create', {});
+    setSessionId(session.id);
+    saveLastSession(session.id);
+    void refreshSessions();
+    return session.id;
+  }, [client, refreshSessions]);
+
   useEffect(() => {
-    if (connection !== 'open') return;
+    if (!client || connection !== 'open') return;
     void refreshSessions().then((list) => {
-      if (sessionId && list.some((s) => s.id === sessionId)) return;
-      if (sessionId) {
-        client.request('session.subscribe', { sessionId }).catch(() => selectSession(list[0]?.id ?? null));
-        return;
-      }
-      if (list[0]) selectSession(list[0].id);
-      else createSession();
+      if (!sessionId && list[0]) setSessionId(list[0].id);
     });
     const id = setInterval(refreshSessions, 15_000);
     return () => clearInterval(id);
-  }, [connection, client, refreshSessions, sessionId, selectSession, createSession]);
+  }, [client, connection, refreshSessions, sessionId]);
 
   useEffect(() => {
-    if (!store) return;
-    return store.onEvent((event) => {
-      if (event.type === 'session.switched') {
-        selectSession(event.to);
-        void refreshSessions();
-      } else if (event.type === 'ui.request' && event.modal === 'model') {
-        setPickingModel(true);
-      } else if (event.type === 'status' || event.type === 'session.updated') {
-        void refreshSessions();
-      }
-    });
-  }, [store, selectSession, refreshSessions]);
+    if (!link) setSessions([]);
+  }, [link]);
 
-  const submit = useCallback(
+  const newChat = useCallback(() => {
+    navigate('morpheus');
+    if (client) void createSession().catch(() => {});
+  }, [client, navigate, createSession]);
+
+  const ask = useCallback(
     (prompt: string) => {
-      if (!sessionId) return;
-      client.request('turn.start', { sessionId, prompt }).catch((err: Error) => setNotice(err.message));
+      if (!client) {
+        navigate('morpheus');
+        return;
+      }
+      void createSession()
+        .then((id) => {
+          if (!id) return;
+          navigate('morpheus');
+          return client.request('turn.start', { sessionId: id, prompt });
+        })
+        .catch(() => navigate('morpheus'));
     },
-    [client, sessionId]
+    [client, navigate, createSession]
   );
 
-  const stop = useCallback(() => {
-    if (sessionId) client.request('turn.abort', { sessionId }).catch(() => {});
-  }, [client, sessionId]);
+  const showSidebar = useCallback(() => {
+    if (window.matchMedia(NARROW).matches) setDrawerOpen(true);
+    else setSidebarHidden(false);
+  }, []);
+  const hideSidebar = useCallback(() => {
+    if (window.matchMedia(NARROW).matches) setDrawerOpen(false);
+    else setSidebarHidden(true);
+  }, []);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const sessionsChanged = useCallback(() => void refreshSessions(), [refreshSessions]);
+  const repair = useCallback(() => onUnlink(), [onUnlink]);
+  const unlink = useCallback(() => {
+    setSessionId(null);
+    onUnlink();
+  }, [onUnlink]);
 
-  const pickModel = useCallback(
-    (model: string) => {
-      setPickingModel(false);
-      if (sessionId) client.request('session.setModel', { sessionId, model }).catch((err: Error) => setNotice(err.message));
-    },
-    [client, sessionId]
-  );
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && snapshot?.status === 'running' && !(e.target instanceof HTMLTextAreaElement)) stop();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [snapshot?.status, stop]);
-
-  const openSessions = useCallback(() => setDrawer((d) => (d === 'sessions' ? null : 'sessions')), []);
-  const openActivity = useCallback(() => setDrawer((d) => (d === 'activity' ? null : 'activity')), []);
-  const closeDrawer = useCallback(() => setDrawer(null), []);
-  const openModels = useCallback(() => setPickingModel(true), []);
-  const closeModels = useCallback(() => setPickingModel(false), []);
-  const dismissNotice = useCallback(() => setNotice(null), []);
+  let body;
+  if (view === 'home') {
+    body = <Home linked={Boolean(link)} connection={connection} sessions={sessions} onMenu={showSidebar} onNavigate={navigate} onAsk={ask} onOpenSession={selectSession} />;
+  } else if (view === 'automations') {
+    body = <Automations onMenu={showSidebar} />;
+  } else if (!link) {
+    body = (
+      <div className="view">
+        <TopBar onMenu={showSidebar} title="Morpheus" />
+        <ConnectMorpheus initial={lastLink} onConnect={onLink} />
+      </div>
+    );
+  } else {
+    body = (
+      <MorpheusView
+        sessionId={sessionId}
+        connection={connection}
+        onMenu={showSidebar}
+        onSwitchSession={selectSession}
+        onSessionsChanged={sessionsChanged}
+        onRepair={repair}
+      />
+    );
+  }
 
   return (
-    <div className={`app${drawer ? ` drawer-${drawer}` : ''}`}>
-      <Header session={snapshot} connection={connection} onOpenSessions={openSessions} onOpenActivity={openActivity} onOpenModels={openModels} />
-
-      {connection === 'unauthorized' ? (
-        <div className="banner error">
-          token rejected. the daemon token changed.{' '}
-          <button type="button" onClick={onUnlink}>
-            re-pair
-          </button>
-        </div>
-      ) : connection === 'reconnecting' ? (
-        <div className="banner">lost the daemon · relinking…</div>
-      ) : null}
-      {notice ? (
-        <button type="button" className="banner error" onClick={dismissNotice}>
-          {notice} · dismiss
-        </button>
-      ) : null}
-
-      <div className="main">
-        <aside className="col col-sessions">
-          <Sessions sessions={sessions} activeId={sessionId} onSelect={selectSession} onCreate={createSession} />
-          <button type="button" className="unlink muted" onClick={onUnlink}>
-            unlink device
-          </button>
-        </aside>
-        <main className="col col-feed">{snapshot ? <Feed threads={snapshot.threads} cwd={snapshot.cwd} /> : <div className="feed"><Hero /></div>}</main>
-        <aside className="col col-activity">{snapshot ? <Activity threads={snapshot.threads} cwd={snapshot.cwd} /> : null}</aside>
-        {drawer ? <button type="button" className="scrim" aria-label="close" onClick={closeDrawer} /> : null}
-      </div>
-
-      {snapshot ? <StatusBar session={snapshot} /> : null}
-      {sessionId ? (
-        <Composer sessionId={sessionId} running={snapshot?.status === 'running'} disabled={connection !== 'open' || !snapshot} onSubmit={submit} onStop={stop} />
-      ) : null}
-
-      {pickingModel && snapshot ? <ModelPicker current={snapshot.model} onPick={pickModel} onClose={closeModels} /> : null}
+    <div className={`app${sidebarHidden ? ' sidebar-hidden' : ''}${drawerOpen ? ' drawer-open' : ''}`}>
+      <Sidebar
+        view={view}
+        sessions={sessions}
+        activeSessionId={sessionId}
+        connection={connection}
+        linked={Boolean(link)}
+        onNavigate={navigate}
+        onSelectSession={selectSession}
+        onNewChat={newChat}
+        onCollapse={hideSidebar}
+        onUnlink={unlink}
+      />
+      {drawerOpen ? <button type="button" className="scrim" aria-label="close sidebar" onClick={closeDrawer} /> : null}
+      <main className="main">{body}</main>
     </div>
   );
 }

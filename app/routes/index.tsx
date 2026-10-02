@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react';
-import { Connect } from '../components/Connect';
 import { Shell } from '../components/Shell';
 import { linkFromLocation, loadLink, saveLink, type DaemonLink } from '../lib/link';
 import { ClientProvider } from '../lib/morpheus';
@@ -22,10 +21,9 @@ export default function Home() {
     setLink(null);
   }, []);
 
-  if (!link) return <Connect initial={lastLink} onConnect={connect} />;
   return (
     <ClientProvider link={link}>
-      <Shell onUnlink={unlink} />
+      <Shell link={link} lastLink={lastLink} onLink={connect} onUnlink={unlink} />
     </ClientProvider>
   );
 }

@@ -3,6 +3,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type MouseEvent } from 'react';
+import { Icon } from '../lib/icons';
 import { useClient } from '../lib/morpheus';
 
 interface ModelOption {
@@ -76,24 +77,30 @@ export function ModelPicker({ current, onPick, onClose }: ModelPickerProps) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={stop} role="dialog" aria-label="choose model">
-        <div className="panel-title">
-          <span className="accent">⬡</span> model <span className="muted">· current {current}</span>
+      <div className="modal" onClick={stop} role="dialog" aria-label="Choose a model">
+        <div className="modal-head">
+          <h2 className="serif-title small">Choose a model</h2>
+          <button type="button" className="ghost-btn" onClick={onClose} aria-label="close">
+            <Icon name="x" size={16} />
+          </button>
         </div>
-        <form onSubmit={submitCustom}>
-          <input autoFocus value={query} onChange={onQuery} placeholder="filter or type a model id" spellCheck={false} autoCapitalize="off" />
+        <form onSubmit={submitCustom} className="search-field">
+          <Icon name="search" size={15} className="faint" />
+          <input autoFocus value={query} onChange={onQuery} placeholder="Search models or type an id" spellCheck={false} autoCapitalize="off" />
         </form>
         <div className="model-list">
-          {error ? <div className="error">{error}</div> : null}
-          {!models && !error ? <div className="muted">loading models…</div> : null}
+          {error ? <p className="form-error">{error}</p> : null}
+          {!models && !error ? <p className="faint">Loading models…</p> : null}
           {groups.map(([category, items]) => (
-            <div key={category}>
-              <div className="model-group muted">{category}</div>
+            <div key={category} className="model-group">
+              <h3>{category}</h3>
               {items.map((m) => (
                 <button key={m.id} type="button" data-id={m.id} className={`model-item${m.id === current ? ' active' : ''}`} onClick={choose}>
-                  <span className="secondary bold">{m.id}</span>
-                  {m.badge ? <span className="accent"> {m.badge}</span> : null}
-                  {m.description ? <span className="muted model-desc">{m.description}</span> : null}
+                  <span className="model-text">
+                    <span className="model-name">{m.id.split('/').pop()}</span>
+                    {m.description ? <span className="model-desc">{m.description}</span> : null}
+                  </span>
+                  {m.id === current ? <Icon name="check" size={16} /> : null}
                 </button>
               ))}
             </div>

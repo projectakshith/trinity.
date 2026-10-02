@@ -1,8 +1,8 @@
 # trinity
 
-> interface for morpheus.
+> a personal assistant.
 
-A chat client for the [Morpheus](../morpheus) coding agent. Trinity talks to `morpheus serve` over WebSocket, so the agent keeps running on your laptop while you watch and drive it from a browser or your phone. Built with [Manic](https://manicjs.tech) in frontend (SPA) mode; styled after the Morpheus TUI.
+Trinity is a personal assistant hub. Tools plug into it; the first is [Morpheus](../morpheus), a coding agent that runs on your laptop and streams to Trinity over WebSocket, so you can drive it from a browser or your phone. Automations are next. Built with [Manic](https://manicjs.tech) in frontend (SPA) mode, typeset in Instrument Serif and Inter.
 
 ### setup
 
@@ -18,19 +18,17 @@ bun run build    # static app in .manic/client (what Capacitor will bundle)
 ### connecting
 
 1. On the laptop: `morpheus serve` (add `--host 0.0.0.0` or your tailscale IP to reach it from other devices).
-2. Open Trinity and enter the printed `ws://…` address and token (`~/.morpheus/daemon.json`).
+2. In Trinity open Morpheus and enter the printed `ws://…` address and token (`~/.morpheus/daemon.json`).
 
 Or open a pairing link that fills both in: `http://<trinity-host>:6070/?url=ws://<laptop>:7878&token=<token>`. The token gives shell access to the laptop, so don't share it.
 
 ### what's there
 
-- sessions sidebar (saved + live), new session, follows `/new` and `/resume`
-- streamed feed: prompts, thoughts, notes, live action line, markdown replies
-- tool activity column with the TUI's cards (diffs, command output), via `describeStep` from `morpheus/client`
-- status bar (state, elapsed, steps, context, tokens, queue), stop/queue, slash commands
-- daemon-side autocomplete for `/commands` and `@files`
-- model picker from Neo's catalog
-- auto-reconnect with replay; phones relink when the app returns to the foreground
+- home: greeting, a composer that starts a Morpheus task, tool cards, recent sessions
+- Morpheus: chat with the agent's work folded inline ("Worked for 12s · 3 steps"), expandable diffs and command output, model picker, branch and token usage
+- daemon-side autocomplete for `/commands` and `@files`, stop and queue, follows `/new` and `/resume`
+- light and dark themes, sidebar drawer on phones, auto-reconnect with replay
+- automations: placeholder
 
 ### notes
 

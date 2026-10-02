@@ -1,34 +1,40 @@
 /*
- * Text formatting shared across Trinity, mirroring the Morpheus TUI's wording.
+ * Human wording for times, token counts and agent steps.
  */
 
 import { relativePath, type ThreadStep } from 'morpheus/client';
 
 export function fmtTokens(n: number | undefined): string {
-  if (!n) return '0k';
+  if (!n) return '0';
+  if (n < 1000) return String(n);
   return n >= 100_000 ? `${Math.round(n / 1000)}k` : `${(n / 1000).toFixed(1)}k`;
 }
 
-export function fmtClock(seconds: number): string {
-  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-  const s = (seconds % 60).toString().padStart(2, '0');
-  return `${m}:${s}`;
+export function fmtDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-export function fmtSeconds(ms: number): string {
-  return `${(ms / 1000).toFixed(1)}s`;
+export function greeting(now = new Date()): string {
+  const h = now.getHours();
+  if (h < 5) return 'Up late';
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
 }
 
-export function fmtAgo(ts: number, now = Date.now()): string {
-  const s = Math.max(0, Math.round((now - ts) / 1000));
-  if (s < 60) return 'now';
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86_400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86_400)}d`;
-}
+export type SessionBucket = 'Today' | 'Yesterday' | 'This week' | 'Earlier';
 
-function clip(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+export function bucketOf(ts: number, now = Date.now()): SessionBucket {
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const t = startOfToday.getTime();
+  if (ts >= t) return 'Today';
+  if (ts >= t - 86_400_000) return 'Yesterday';
+  if (ts >= t - 6 * 86_400_000) return 'This week';
+  return 'Earlier';
 }
 
 function arg(step: ThreadStep, key: string): string {
@@ -36,39 +42,40 @@ function arg(step: ThreadStep, key: string): string {
   return typeof value === 'string' ? value : '';
 }
 
-/* Live label for what the agent is doing right now ("reading: src/app.ts (1.2s)..."). */
-export function actionLabel(step: ThreadStep | undefined, cwd: string, now: number): string {
-  if (!step) return 'cooking...';
-  const ms = step.isRunning && step.startTime ? now - step.startTime : (step.durationMs ?? 0);
-  const t = ` (${fmtSeconds(ms)})...`;
-  if (step.type === 'thinking') return `thinking rn${t}`;
-  const path = (key: string) => clip(relativePath(arg(step, key), cwd), 32);
+function clip(text: string, max = 48): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+/* What the agent is doing right now, as a short present-tense phrase. */
+export function liveLabel(step: ThreadStep | undefined, cwd: string): string {
+  if (!step || step.type === 'thinking') return 'Thinking';
+  const file = (key: string) => clip(relativePath(arg(step, key), cwd) || 'a file');
   switch (step.name) {
-    case 'grep_code':
-      return arg(step, 'pattern') ? `searching for "${clip(arg(step, 'pattern'), 24)}"${t}` : `searching code${t}`;
     case 'read_file':
-      return arg(step, 'filePath') ? `reading: ${path('filePath')}${t}` : `reading file${t}`;
-    case 'write_file':
-      return arg(step, 'filePath') ? `writing: ${path('filePath')}${t}` : `writing file${t}`;
+      return `Reading ${file('filePath')}`;
     case 'edit_file':
-      return arg(step, 'filePath') ? `editing: ${path('filePath')}${t}` : `editing file${t}`;
-    case 'bash':
-      return arg(step, 'command') ? `running: ${clip(arg(step, 'command').trim(), 32)}${t}` : `running command${t}`;
+      return `Editing ${file('filePath')}`;
+    case 'write_file':
+      return `Writing ${file('filePath')}`;
     case 'list_dir':
-      return arg(step, 'dirPath') ? `looking through: ${path('dirPath')}${t}` : `checking folders${t}`;
+      return `Looking through ${file('dirPath')}`;
+    case 'grep_code':
+      return `Searching for “${clip(arg(step, 'pattern'), 32)}”`;
     case 'outline_code':
-      return arg(step, 'filePath') ? `peeking at: ${path('filePath')}${t}` : `inspecting code${t}`;
+      return `Skimming ${file('filePath')}`;
+    case 'bash':
+      return `Running ${clip(arg(step, 'command').trim(), 40)}`;
     case 'http_request':
-      return arg(step, 'url') ? `pinging: ${clip(arg(step, 'url'), 32)}${t}` : `pinging link${t}`;
+      return `Fetching ${clip(arg(step, 'url'), 40)}`;
     case 'uplink_search':
-      return arg(step, 'query') ? `uplink search: ${clip(arg(step, 'query'), 32)}${t}` : `searching web${t}`;
+      return `Searching the web for “${clip(arg(step, 'query'), 32)}”`;
     case 'uplink_browse':
-      return `uplink ${arg(step, 'action') || 'browse'}: ${clip(arg(step, 'url') || '…', 28)}${t}`;
+      return `Browsing ${clip(arg(step, 'url') || 'the web', 40)}`;
     case 'load_skill':
-      return arg(step, 'name') ? `loading: ${arg(step, 'name')}${t}` : `loading skill${t}`;
+      return `Loading ${arg(step, 'name') || 'a skill'}`;
     case 'record_finding':
-      return arg(step, 'topic') ? `noting down: ${clip(arg(step, 'topic'), 28)}${t}` : `taking notes${t}`;
+      return 'Taking notes';
     default:
-      return `running: ${step.name || 'something'}${t}`;
+      return `Using ${step.name ?? 'a tool'}`;
   }
 }
