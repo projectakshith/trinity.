@@ -2,7 +2,7 @@
 
 > a personal assistant.
 
-Trinity is a personal assistant hub. Tools plug into it; the first is [Morpheus](../morpheus), a coding agent that runs on your laptop and streams to Trinity over WebSocket, so you can drive it from a browser or your phone. Automations are next. Built with [Manic](https://manicjs.tech) in frontend (SPA) mode, typeset in Instrument Serif and Inter.
+Trinity is a personal assistant hub. Tools plug into it; the first is [Morpheus](https://github.com/projectakshith/morpheus), a coding agent that runs on your laptop and streams to Trinity over WebSocket, so you can drive it from a browser or your phone. Automations are next. Built with Next.js (static export), typeset in Instrument Serif and Inter.
 
 ### setup
 
@@ -11,8 +11,8 @@ Trinity is a personal assistant hub. Tools plug into it; the first is [Morpheus]
 cd ../morpheus && bun link
 cd ../trinity && bun install
 
-bun dev          # http://localhost:6070
-bun run build    # static app in .manic/client (what Capacitor will bundle)
+bun dev          # http://localhost:6070 (also reachable over LAN / Tailscale)
+bun run build    # static app in out/ (what Capacitor will bundle)
 ```
 
 ### connecting
@@ -32,4 +32,4 @@ Or open a pairing link that fills both in: `http://<trinity-host>:6070/?url=ws:/
 
 ### notes
 
-- `@manicjs/lint` is removed from `.oxlintrc.json`: oxlint runs it under Node, which refuses to type-strip TypeScript inside `node_modules`, so `manic build` fails with it enabled.
+- `morpheus/client` is TypeScript source in the sibling repo, compiled by Next via `transpilePackages`; `next.config.ts` widens the Turbopack root to the parent folder so the symlink resolves.

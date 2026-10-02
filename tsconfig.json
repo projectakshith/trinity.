@@ -1,22 +1,21 @@
 {
   "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "jsx": "react-jsx",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["app/*"]
-    },
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": false,
+    "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
+    "module": "esnext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "allowImportingTsExtensions": true
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["app/**/*", "~manic.ts", "manic.config.ts"],
-  "exclude": ["node_modules", ".manic"]
+  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
+  "exclude": ["node_modules"]
 }

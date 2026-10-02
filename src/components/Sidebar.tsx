@@ -3,7 +3,7 @@
  */
 
 import { useCallback, useMemo, type MouseEvent } from 'react';
-import { useTheme } from 'manicjs/theme';
+import { useTheme } from '../lib/theme';
 import type { ConnectionState, SessionListItem } from 'morpheus/client';
 import { bucketOf, type SessionBucket } from '../lib/format';
 import { Icon, type IconName } from '../lib/icons';
