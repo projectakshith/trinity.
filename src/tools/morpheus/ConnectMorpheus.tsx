@@ -1,11 +1,7 @@
-/*
- * Linking Trinity to a Morpheus daemon: address + token, verified before saving.
- */
-
 import { useCallback, useState, type ChangeEvent, type FormEvent } from 'react';
 import { MorpheusClient } from 'morpheus/client';
-import { defaultDaemonUrl, type DaemonLink } from '../lib/link';
-import { Icon } from '../lib/icons';
+import { Icon } from '@/ui/Icon';
+import { defaultDaemonUrl, type DaemonLink } from './link';
 
 export function ConnectMorpheus({ initial, onConnect }: { initial: DaemonLink | null; onConnect: (link: DaemonLink) => void }) {
   const [url, setUrl] = useState(initial?.url ?? defaultDaemonUrl());

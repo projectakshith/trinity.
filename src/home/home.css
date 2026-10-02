@@ -1,0 +1,33 @@
+.home { padding-top: clamp(40px, 14vh, 140px); padding-bottom: 60px; }
+
+.home-section { margin-top: 44px; }
+
+.home-section h2 { margin: 0 0 10px; font-size: 13px; font-weight: 500; color: var(--text-3); }
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.tool-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  transition: border-color 0.15s;
+}
+
+.tool-card:hover { border-color: var(--border-strong); }
+
+.tool-name { font-weight: 500; font-size: 14.5px; }
+
+.tool-desc { color: var(--text-3); font-size: 13px; margin-top: 2px; }
+
+.tool-status { grid-column: 2; font-size: 12px; color: var(--text-3); }
+
+.tool-status.on { color: var(--green); }

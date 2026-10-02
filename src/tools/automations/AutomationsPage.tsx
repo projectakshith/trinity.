@@ -1,14 +1,12 @@
-/*
- * Placeholder for Trinity's automations: scheduled and triggered routines.
- */
+'use client';
 
-import { Icon } from '../lib/icons';
-import { TopBar } from './TopBar';
+import { TopBar } from '@/shell/TopBar';
+import { Icon } from '@/ui/Icon';
 
-export function Automations({ onMenu }: { onMenu: () => void }) {
+export function AutomationsPage() {
   return (
     <div className="view">
-      <TopBar onMenu={onMenu} title="Automations" />
+      <TopBar title="Automations" />
       <div className="center-page">
         <div className="empty-card">
           <div className="tool-icon">

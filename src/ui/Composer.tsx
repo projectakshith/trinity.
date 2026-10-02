@@ -1,15 +1,22 @@
-/*
- * Message input. With a Morpheus session attached, suggestions come from the daemon
- * (same engine as the TUI: /commands, @files, prompt history).
- */
-
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent } from 'react';
-import { applySuggestion, type SuggestionItem } from 'morpheus/client';
-import { Icon } from '../lib/icons';
-import { useMaybeClient } from '../lib/morpheus';
+import { Icon } from './Icon';
+
+export interface Suggestion {
+  id: string;
+  label: string;
+  detail?: string;
+  insertText: string;
+  replaceRange?: { start: number; end: number };
+}
+
+export interface Autocomplete {
+  wants: (input: string, cursor: number) => boolean;
+  fetch: (input: string, cursor: number) => Promise<Suggestion[]>;
+  apply: (input: string, cursor: number, item: Suggestion) => { newValue: string; newCursorPos: number };
+}
 
 interface ComposerProps {
-  sessionId?: string | null;
+  autocomplete?: Autocomplete;
   placeholder: string;
   running?: boolean;
   disabled?: boolean;
@@ -22,15 +29,9 @@ interface ComposerProps {
 
 const SUGGEST_DELAY_MS = 90;
 
-function wantsSuggestions(input: string, cursor: number): boolean {
-  if (input.startsWith('/')) return true;
-  return /(^|\s)@\S*$/u.test(input.slice(0, cursor));
-}
-
-export function Composer({ sessionId, placeholder, running = false, disabled = false, autoFocus = false, toolLabel, meta, onSubmit, onStop }: ComposerProps) {
-  const client = useMaybeClient();
+export function Composer({ autocomplete, placeholder, running = false, disabled = false, autoFocus = false, toolLabel, meta, onSubmit, onStop }: ComposerProps) {
   const [value, setValue] = useState('');
-  const [suggestions, setSuggestions] = useState<SuggestionItem[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const ticketRef = useRef(0);
@@ -49,23 +50,23 @@ export function Composer({ sessionId, placeholder, running = false, disabled = f
   const suggest = useCallback(
     (input: string, cursor: number) => {
       const ticket = ++ticketRef.current;
-      if (!client || !sessionId || !wantsSuggestions(input, cursor)) {
+      if (!autocomplete?.wants(input, cursor)) {
         setSuggestions([]);
         return;
       }
       setTimeout(() => {
         if (ticket !== ticketRef.current) return;
-        client
-          .request('autocomplete', { sessionId, input, cursorPos: cursor })
-          .then((res) => {
+        autocomplete
+          .fetch(input, cursor)
+          .then((items) => {
             if (ticket !== ticketRef.current) return;
-            setSuggestions(res.suggestions.slice(0, 7));
+            setSuggestions(items.slice(0, 7));
             setSelected(0);
           })
           .catch(() => setSuggestions([]));
       }, SUGGEST_DELAY_MS);
     },
-    [client, sessionId]
+    [autocomplete]
   );
 
   const onChange = useCallback(
@@ -77,9 +78,10 @@ export function Composer({ sessionId, placeholder, running = false, disabled = f
   );
 
   const accept = useCallback(
-    (item: SuggestionItem) => {
+    (item: Suggestion) => {
+      if (!autocomplete) return;
       const el = inputRef.current;
-      const { newValue, newCursorPos } = applySuggestion(value, el?.selectionStart ?? value.length, item);
+      const { newValue, newCursorPos } = autocomplete.apply(value, el?.selectionStart ?? value.length, item);
       setValue(newValue);
       setSuggestions([]);
       ticketRef.current++;
@@ -88,7 +90,7 @@ export function Composer({ sessionId, placeholder, running = false, disabled = f
         el?.setSelectionRange(newCursorPos, newCursorPos);
       });
     },
-    [value]
+    [autocomplete, value]
   );
 
   const submit = useCallback(() => {

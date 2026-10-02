@@ -1,13 +1,10 @@
-/*
- * The agent's work for one turn, shown inline above its reply. Open while running, folded once done.
- */
-
-import { memo, useCallback, useMemo, useState, type ReactElement } from 'react';
+import { memo, useCallback, useState, type ReactElement } from 'react';
 import { describeStep, type CardModel, type QuietItem, type Thread, type ThreadStep } from 'morpheus/client';
-import { fmtDuration, liveLabel } from '../lib/format';
-import { Icon, type IconName } from '../lib/icons';
-import { renderMarkdown } from '../lib/markdown';
-import { useNow } from '../lib/morpheus';
+import { fmtDuration } from '@/lib/format';
+import { useNow } from '@/lib/useNow';
+import { Icon, type IconName } from '@/ui/Icon';
+import { Markdown } from '@/ui/Markdown';
+import { liveLabel } from './labels';
 
 const VERBS: Record<string, [running: string, done: string, icon: IconName]> = {
   read: ['Reading', 'Read', 'file'],
@@ -134,11 +131,10 @@ function Thought({ step }: { step: ThreadStep }) {
 }
 
 function Note({ step }: { step: ThreadStep }) {
-  const html = useMemo(() => ({ __html: renderMarkdown(step.content ?? '') }), [step.content]);
   return (
     <div className="step note">
       <Icon name="message" size={14} className="step-icon" />
-      <div className="step-text note-text" dangerouslySetInnerHTML={html} />
+      <Markdown source={step.content ?? ''} className="step-text note-text" />
     </div>
   );
 }

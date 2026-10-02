@@ -1,10 +1,6 @@
-/*
- * Model picker, fed by Neo's model catalog through the daemon's neo.request relay.
- */
-
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type MouseEvent } from 'react';
-import { Icon } from '../lib/icons';
-import { useClient } from '../lib/morpheus';
+import { Icon } from '@/ui/Icon';
+import { useClient } from './client';
 
 interface ModelOption {
   id: string;

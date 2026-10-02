@@ -1,0 +1,213 @@
+.app {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  height: 100dvh;
+}
+
+.app.sidebar-hidden { grid-template-columns: minmax(0, 1fr); }
+
+.app.sidebar-hidden .sidebar { display: none; }
+
+.main {
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 0;
+}
+
+.scrim { display: none; }
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  padding: calc(12px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 6px 14px 8px;
+}
+
+.wordmark {
+  font-family: var(--serif);
+  font-size: 27px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.new-chat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  font-weight: 500;
+  transition: border-color 0.15s;
+}
+
+.new-chat:hover { border-color: var(--border-strong); }
+
+.nav { display: flex; flex-direction: column; gap: 1px; }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: var(--text-2);
+}
+
+.nav-item:hover { background: var(--hover); color: var(--text); }
+
+.nav-item.active { background: var(--surface-2); color: var(--text); font-weight: 500; }
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.status-dot.on { background: var(--green); }
+
+.status-dot.wait { background: var(--amber); }
+
+.status-dot.bad { background: var(--red); }
+
+.soon {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.sidebar-sections {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 18px;
+}
+
+.recents section { margin-bottom: 14px; }
+
+.recents h3 {
+  margin: 0 0 4px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.recent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--text-2);
+}
+
+.recent:hover { background: var(--hover); color: var(--text); }
+
+.recent.active { background: var(--surface-2); color: var(--text); }
+
+.recent-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.running-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: breathe 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.sidebar-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 54px;
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+
+.menu-btn { display: none; }
+
+.sidebar-hidden .menu-btn { display: inline-flex; }
+
+.topbar-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.recent-list {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.recent-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+}
+
+.recent-row + .recent-row { border-top: 1px solid var(--border); }
+
+.recent-row:hover { background: var(--hover); }
+
+.recent-row-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 860px) {
+  .app,
+  .app.sidebar-hidden { grid-template-columns: minmax(0, 1fr); }
+  .sidebar,
+  .app.sidebar-hidden .sidebar {
+    display: flex;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(84vw, 300px);
+    z-index: 40;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: var(--shadow);
+  }
+  .drawer-open .sidebar { transform: none; }
+  .scrim { display: block; position: fixed; inset: 0; z-index: 35; background: rgb(10 9 8 / 0.35); }
+  .menu-btn { display: inline-flex; }
+  .topbar { padding: 0 10px; }
+}

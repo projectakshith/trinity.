@@ -1,52 +1,56 @@
-/*
- * One Morpheus session: conversation, composer, model and workspace context.
- */
+'use client';
 
-import { useCallback, useEffect, useState, type MouseEvent } from 'react';
-import type { ConnectionState } from 'morpheus/client';
-import { fmtTokens } from '../lib/format';
-import { Icon } from '../lib/icons';
-import { useClient, useSession } from '../lib/morpheus';
-import { Composer } from './Composer';
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { applySuggestion, type SuggestionItem } from 'morpheus/client';
+import { fmtTokens } from '@/lib/format';
+import { TopBar } from '@/shell/TopBar';
+import type { Autocomplete } from '@/ui/Composer';
+import { Composer } from '@/ui/Composer';
+import { Icon } from '@/ui/Icon';
+import { useClient, useSession } from './client';
 import { Conversation } from './Conversation';
+import { saveLastSession } from './link';
 import { ModelPicker } from './ModelPicker';
-import { TopBar } from './TopBar';
+import { useMorpheus } from './state';
 
 const STARTERS = ['Review my uncommitted changes', 'Explain how this codebase is structured', 'Find and fix a failing test'];
+const DEFAULT_CONTEXT_LIMIT = 128_000;
 
-interface MorpheusViewProps {
-  sessionId: string | null;
-  connection: ConnectionState;
-  onMenu: () => void;
-  onSwitchSession: (id: string) => void;
-  onSessionsChanged: () => void;
-  onRepair: () => void;
-}
-
-export function MorpheusView({ sessionId, connection, onMenu, onSwitchSession, onSessionsChanged, onRepair }: MorpheusViewProps) {
+export function SessionView({ sessionId }: { sessionId: string }) {
   const client = useClient();
+  const { connection, unlink, refreshSessions, openSession } = useMorpheus();
   const { snapshot, store } = useSession(sessionId);
   const [pickingModel, setPickingModel] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
+  useEffect(() => saveLastSession(sessionId), [sessionId]);
+
   useEffect(() => {
     if (!store) return;
     return store.onEvent((event) => {
-      if (event.type === 'session.switched') onSwitchSession(event.to);
+      if (event.type === 'session.switched') openSession(event.to, true);
       else if (event.type === 'ui.request' && event.modal === 'model') setPickingModel(true);
-      else if (event.type === 'status' || event.type === 'session.updated') onSessionsChanged();
+      else if (event.type === 'status' || event.type === 'session.updated') void refreshSessions();
     });
-  }, [store, onSwitchSession, onSessionsChanged]);
+  }, [store, openSession, refreshSessions]);
+
+  const autocomplete = useMemo<Autocomplete>(
+    () => ({
+      wants: (input, cursor) => input.startsWith('/') || /(^|\s)@\S*$/u.test(input.slice(0, cursor)),
+      fetch: async (input, cursor) => (await client.request('autocomplete', { sessionId, input, cursorPos: cursor })).suggestions,
+      apply: (input, cursor, item) => applySuggestion(input, cursor, item as SuggestionItem),
+    }),
+    [client, sessionId]
+  );
 
   const send = useCallback(
     (prompt: string) => {
-      if (!sessionId) return;
       client.request('turn.start', { sessionId, prompt }).catch((err: Error) => setNotice(err.message));
     },
     [client, sessionId]
   );
   const stop = useCallback(() => {
-    if (sessionId) client.request('turn.abort', { sessionId }).catch(() => {});
+    client.request('turn.abort', { sessionId }).catch(() => undefined);
   }, [client, sessionId]);
   const starter = useCallback(
     (e: MouseEvent<HTMLButtonElement>) => {
@@ -58,7 +62,7 @@ export function MorpheusView({ sessionId, connection, onMenu, onSwitchSession, o
   const pickModel = useCallback(
     (model: string) => {
       setPickingModel(false);
-      if (sessionId) client.request('session.setModel', { sessionId, model }).catch((err: Error) => setNotice(err.message));
+      client.request('session.setModel', { sessionId, model }).catch((err: Error) => setNotice(err.message));
     },
     [client, sessionId]
   );
@@ -69,13 +73,12 @@ export function MorpheusView({ sessionId, connection, onMenu, onSwitchSession, o
   const running = snapshot?.status === 'running';
   const usage = snapshot?.usage;
   const meta = usage?.totalTokens
-    ? `${fmtTokens(usage.totalTokens)} tokens · context ${fmtTokens(usage.peakContextTokens)} of ${fmtTokens(usage.contextLimit ?? 128_000)}`
+    ? `${fmtTokens(usage.totalTokens)} tokens · context ${fmtTokens(usage.peakContextTokens)} of ${fmtTokens(usage.contextLimit ?? DEFAULT_CONTEXT_LIMIT)}`
     : undefined;
-  const empty = !snapshot || snapshot.threads.length === 0;
 
   return (
     <div className="view">
-      <TopBar onMenu={onMenu} title={snapshot?.title}>
+      <TopBar title={snapshot?.title}>
         {snapshot?.workspace.branch ? (
           <span className="chip chip-branch" title={snapshot.cwd}>
             <Icon name="branch" size={13} />
@@ -89,12 +92,15 @@ export function MorpheusView({ sessionId, connection, onMenu, onSwitchSession, o
             <Icon name="chevronDown" size={13} />
           </button>
         ) : null}
+        <button type="button" className="ghost-btn" onClick={unlink} aria-label="disconnect morpheus">
+          <Icon name="logout" size={15} />
+        </button>
       </TopBar>
 
       {connection === 'unauthorized' ? (
         <div className="notice error">
           Morpheus rejected the saved token.
-          <button type="button" onClick={onRepair}>
+          <button type="button" onClick={unlink}>
             Reconnect
           </button>
         </div>
@@ -107,7 +113,7 @@ export function MorpheusView({ sessionId, connection, onMenu, onSwitchSession, o
         </button>
       ) : null}
 
-      {empty ? (
+      {!snapshot || snapshot.threads.length === 0 ? (
         <div className="scroll">
           <div className="column session-empty">
             <h1 className="greeting small">What should Morpheus work on?</h1>
@@ -127,7 +133,7 @@ export function MorpheusView({ sessionId, connection, onMenu, onSwitchSession, o
 
       <div className="column composer-dock">
         <Composer
-          sessionId={sessionId}
+          autocomplete={autocomplete}
           placeholder={running ? 'Add a follow-up — it runs next' : 'Message Morpheus'}
           running={running}
           disabled={connection !== 'open' || !snapshot}

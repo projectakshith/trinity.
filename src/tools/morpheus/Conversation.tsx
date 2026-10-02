@@ -1,18 +1,9 @@
-/*
- * A Morpheus session rendered as a chat: user bubbles, assistant replies with their work folded above.
- */
-
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { Thread } from 'morpheus/client';
-import { fmtDuration } from '../lib/format';
-import { Icon } from '../lib/icons';
-import { renderMarkdown } from '../lib/markdown';
+import { fmtDuration } from '@/lib/format';
+import { Icon } from '@/ui/Icon';
+import { Markdown } from '@/ui/Markdown';
 import { Steps } from './Steps';
-
-const Markdown = memo(function Markdown({ source, className }: { source: string; className: string }) {
-  const html = useMemo(() => ({ __html: renderMarkdown(source) }), [source]);
-  return <div className={className} dangerouslySetInnerHTML={html} />;
-});
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);

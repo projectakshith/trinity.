@@ -1,13 +1,9 @@
-/*
- * Agent output is untrusted: render markdown, then sanitize before it touches the DOM.
- */
-
+import { memo, useMemo } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
 marked.setOptions({ gfm: true, breaks: true });
 
-/* DOMPurify needs a window, so hooks are attached on first use in the browser (not at prerender). */
 let hooked = false;
 
 export function renderMarkdown(source: string): string {
@@ -22,3 +18,8 @@ export function renderMarkdown(source: string): string {
   }
   return DOMPurify.sanitize(marked.parse(source, { async: false }) as string);
 }
+
+export const Markdown = memo(function Markdown({ source, className }: { source: string; className?: string }) {
+  const html = useMemo(() => ({ __html: renderMarkdown(source) }), [source]);
+  return <div className={className} dangerouslySetInnerHTML={html} />;
+});

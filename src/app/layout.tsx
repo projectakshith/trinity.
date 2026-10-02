@@ -2,7 +2,12 @@ import type { Metadata, Viewport } from 'next';
 import { Instrument_Serif, Inter } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { THEME_BOOT_SCRIPT } from '@/lib/themeScript';
-import './globals.css';
+import { AppShell } from '@/shell/AppShell';
+import '@/styles/globals.css';
+import '@/ui/ui.css';
+import '@/shell/shell.css';
+import '@/home/home.css';
+import '@/tools/morpheus/morpheus.css';
 
 const serif = Instrument_Serif({ weight: '400', style: ['normal', 'italic'], subsets: ['latin'], variable: '--font-serif' });
 const sans = Inter({ subsets: ['latin'], variable: '--font-sans' });
@@ -29,7 +34,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <AppShell>{children}</AppShell>
+      </body>
     </html>
   );
 }

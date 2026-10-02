@@ -1,7 +1,3 @@
-/*
- * Line icons (Lucide geometry), inlined so the app has no icon dependency and works offline.
- */
-
 const PATHS = {
   plus: ['M12 5v14', 'M5 12h14'],
   panel: ['M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z', 'M9 3v18'],

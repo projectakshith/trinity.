@@ -30,6 +30,26 @@ Or open a pairing link that fills both in: `http://<trinity-host>:6070/?url=ws:/
 - light and dark themes, sidebar drawer on phones, auto-reconnect with replay
 - automations: placeholder
 
+### structure
+
+```
+src/
+  app/          routes only: /, /morpheus/?s=<session>, /automations/
+  shell/        AppShell (sidebar frame, providers), Sidebar, TopBar
+  home/         home page, built from the tool registry
+  tools/
+    registry.ts the list of tools
+    types.ts    the Tool contract: nav badge, home card status, sidebar and home sections, ask/new-chat hooks
+    morpheus/   connection, session state, pages, chat, steps, model picker
+    automations/
+  ui/           Icon, Markdown, Composer (tool-agnostic)
+  lib/          format, theme, storage, small hooks
+  styles/       tokens and base styles
+  config.ts     owner name
+```
+
+Adding a tool means a folder under `src/tools/`, an entry in `registry.ts`, and a route in `src/app/`.
+
 ### notes
 
 - `morpheus/client` is TypeScript source in the sibling repo, compiled by Next via `transpilePackages`; `next.config.ts` widens the Turbopack root to the parent folder so the symlink resolves.

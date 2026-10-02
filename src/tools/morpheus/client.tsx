@@ -1,21 +1,15 @@
-/*
- * React bindings for morpheus/client: one client per daemon link, session stores via useSyncExternalStore.
- */
-
-import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { MorpheusClient, type ConnectionState, type SessionSnapshot, type SessionStore } from 'morpheus/client';
 import type { DaemonLink } from './link';
 
 const ClientContext = createContext<MorpheusClient | null>(null);
 
-/* Morpheus is optional: with no link, the provider holds null and Morpheus views offer to connect. */
 export function ClientProvider({ link, children }: { link: DaemonLink | null; children: ReactNode }) {
   const client = useMemo(() => (link ? new MorpheusClient({ url: link.url, token: link.token, clientName: 'trinity' }) : null), [link]);
 
   useEffect(() => {
     if (!client) return;
     client.connect();
-    /* Phones suspend sockets in the background; reconnect immediately when the app comes back. */
     const wake = () => {
       if (document.visibilityState === 'visible') client.reconnectNow();
     };
@@ -41,34 +35,22 @@ export function useClient(): MorpheusClient {
   return client;
 }
 
-const noClientState = () => () => {};
+const noSubscribe = () => () => {};
+const noSnapshot = () => null;
 
 export function useConnectionState(): ConnectionState {
   const client = useMaybeClient();
   return useSyncExternalStore(
-    client ? (onChange) => client.onState(onChange) : noClientState,
-    () => client?.state ?? 'idle'
+    client ? (onChange) => client.onState(onChange) : noSubscribe,
+    () => client?.state ?? 'idle',
+    () => 'idle'
   );
 }
-
-const noopSubscribe = () => () => {};
-const noSnapshot = () => null;
 
 export function useSession(sessionId: string | null): { snapshot: SessionSnapshot | null; store: SessionStore | null } {
   const client = useClient();
   const handle = useMemo(() => (sessionId ? client.session(sessionId) : null), [client, sessionId]);
   useEffect(() => () => handle?.release(), [handle]);
-  const snapshot = useSyncExternalStore(handle ? handle.store.subscribe : noopSubscribe, handle ? handle.store.getSnapshot : noSnapshot);
+  const snapshot = useSyncExternalStore(handle ? handle.store.subscribe : noSubscribe, handle ? handle.store.getSnapshot : noSnapshot, noSnapshot);
   return { snapshot, store: handle?.store ?? null };
-}
-
-/* Re-renders on an interval while active, for live elapsed timers. */
-export function useNow(active: boolean, intervalMs = 250): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    const id = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(id);
-  }, [active, intervalMs]);
-  return active ? now : Date.now();
 }

@@ -1,7 +1,3 @@
-/*
- * Light/dark theme: follows the system until the user picks one. The .dark class on <html> drives the CSS tokens.
- */
-
 import { useCallback, useEffect, useState } from 'react';
 import { THEME_KEY as KEY } from './themeScript';
 
@@ -15,7 +11,6 @@ export function useTheme(): { isDark: boolean; toggle: () => void } {
       try {
         if (localStorage.getItem(KEY)) return;
       } catch {
-        /* No storage: always follow the system. */
       }
       document.documentElement.classList.toggle('dark', e.matches);
       setIsDark(e.matches);
@@ -31,7 +26,6 @@ export function useTheme(): { isDark: boolean; toggle: () => void } {
     try {
       localStorage.setItem(KEY, next ? 'dark' : 'light');
     } catch {
-      /* Choice just won't persist. */
     }
   }, []);
 
