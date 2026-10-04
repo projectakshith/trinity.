@@ -98,7 +98,7 @@ export function cachedDigest(): Digest | null {
 }
 
 export async function buildDigest(config: Config, force = false): Promise<Digest> {
-  const results = await Promise.all([Promise.resolve(readWhatsApp(config.whatsappDb, config.ownerName)), readGmail(config), readCalendar(config)]);
+  const results = await Promise.all([Promise.resolve(readWhatsApp(config.whatsappDb, config.ownerName, config.whatsapp)), readGmail(config), readCalendar(config)]);
   const sources = results.map((r) => ({ source: r.source, ok: r.ok, error: r.error, count: r.items.length }));
   const hash = itemsHash(results);
   const cached = cachedDigest();

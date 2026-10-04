@@ -38,7 +38,21 @@ function clock(appleSeconds: number): string {
   return new Date((appleSeconds + APPLE_EPOCH) * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
-export function readWhatsApp(path: string, ownerName = 'You'): SourceResult {
+export interface GroupFilter {
+  mutedGroups: string[];
+  importantGroups: string[];
+}
+
+function norm(name: string): string {
+  return name.replace(/[\u200e\u200f]/gu, '').trim().toLowerCase();
+}
+
+function listed(name: string, patterns: string[]): boolean {
+  const n = norm(name);
+  return patterns.some((p) => n.includes(norm(p)));
+}
+
+export function readWhatsApp(path: string, ownerName = 'You', filter: GroupFilter = { mutedGroups: [], importantGroups: [] }): SourceResult {
   if (!existsSync(path)) return { source: 'whatsapp', ok: false, error: 'WhatsApp desktop database not found', items: [] };
   let db: Database;
   try {
@@ -76,7 +90,7 @@ export function readWhatsApp(path: string, ownerName = 'You'): SourceResult {
          ORDER BY ZLASTMESSAGEDATE DESC
          LIMIT ?3`
       )
-      .all(since, unreadSince, MAX_CHATS) as ChatRow[];
+      .all(since, unreadSince, MAX_CHATS * 4) as ChatRow[];
 
     const messagesFor = db.query(
       `SELECT m.ZMESSAGEDATE AS date, m.ZISFROMME AS mine, m.ZTEXT AS text, ${sender} AS sender
@@ -88,12 +102,15 @@ export function readWhatsApp(path: string, ownerName = 'You'): SourceResult {
 
     const items: SourceItem[] = [];
     for (const chat of chats) {
+      if (items.length >= MAX_CHATS) break;
       const floor = (chat.unread ?? 0) > 0 ? unreadSince : since;
       const rows = (messagesFor.all(chat.pk, floor, MAX_MESSAGES) as MessageRow[]).reverse();
       if (rows.length === 0) continue;
       const name = (chat.name ?? chat.jid ?? 'Unknown chat').replace(/[\u200e\u200f]/gu, '').trim();
       const group = chat.type === 1 || (chat.jid ?? '').endsWith('@g.us');
-      if (group && (chat.unread ?? 0) === 0) continue;
+      const important = group && listed(name, filter.importantGroups);
+      if (group && listed(name, filter.mutedGroups)) continue;
+      if (group && !important && (chat.unread ?? 0) === 0) continue;
       if (!group && name === 'You') continue;
       const lines = rows.map((r) => `${clock(r.date)} ${r.mine ? `${ownerName} (you)` : group ? (r.sender ?? 'unknown member') : name}: ${clip(r.text)}`);
       items.push({
@@ -101,7 +118,7 @@ export function readWhatsApp(path: string, ownerName = 'You'): SourceResult {
         ref: `wa:${chat.pk}`,
         at: ((chat.last ?? rows[rows.length - 1].date) + APPLE_EPOCH) * 1000,
         from: name,
-        title: group ? `group "${name}"` : `DM with ${name}`,
+        title: group ? `group "${name}"${important ? ' (IMPORTANT to the owner: exams, deadlines and announcements here matter)' : ''}` : `DM with ${name}`,
         text: lines.join('\n'),
         unread: (chat.unread ?? 0) > 0,
       });
