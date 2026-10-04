@@ -8,6 +8,7 @@ let package = Package(
         .executableTarget(
             name: "TrinityPet",
             path: "Sources/TrinityPet",
+            resources: [.copy("Fonts")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         )
     ]

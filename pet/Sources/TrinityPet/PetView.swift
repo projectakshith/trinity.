@@ -1,200 +1,218 @@
 import AppKit
+import CoreText
 import SwiftUI
 
 enum Theme {
-    static let card = Color(red: 0.075, green: 0.075, blue: 0.08)
+    static let surface = Color(red: 0.122, green: 0.118, blue: 0.114)
+    static let raised = Color(red: 0.161, green: 0.157, blue: 0.149)
     static let line = Color.white.opacity(0.08)
-    static let text = Color(red: 0.93, green: 0.93, blue: 0.92)
-    static let dim = Color(red: 0.56, green: 0.56, blue: 0.56)
-    static let faint = Color(red: 0.36, green: 0.36, blue: 0.37)
+    static let text = Color(red: 0.925, green: 0.922, blue: 0.906)
+    static let text2 = Color(red: 0.667, green: 0.651, blue: 0.624)
+    static let text3 = Color(red: 0.459, green: 0.447, blue: 0.424)
+    static let signal = Color(red: 0.56, green: 0.81, blue: 0.54)
     static let code = Color(red: 0.36, green: 1.0, blue: 0.45)
-    static let ember = Color(red: 1.0, green: 0.42, blue: 0.24)
-    static let blue = Color(red: 0.33, green: 0.62, blue: 1.0)
-    static let red = Color(red: 0.96, green: 0.42, blue: 0.4)
+    static let ember = Color(red: 1.0, green: 0.48, blue: 0.32)
+    static let blue = Color(red: 0.45, green: 0.66, blue: 1.0)
+    static let red = Color(red: 0.94, green: 0.49, blue: 0.41)
 
-    static func mono(_ size: CGFloat, _ weight: Font.Weight = .medium) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
+    static func serif(_ size: CGFloat, italic: Bool = false) -> Font {
+        .custom(italic ? "InstrumentSerif-Italic" : "InstrumentSerif-Regular", size: size)
+    }
+
+    static func sans(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .custom("Afacad", size: size).weight(weight)
+    }
+
+    static func registerFonts() {
+        guard let urls = Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") else { return }
+        for url in urls { CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil) }
     }
 }
 
-struct PixelGlyph: View {
-    let rows: [String]
-    let color: Color
-    var scale: CGFloat = 1.5
-
-    var body: some View {
-        Canvas { ctx, _ in
-            var path = Path()
-            for (y, row) in rows.enumerated() {
-                for (x, c) in row.enumerated() where c == "#" {
-                    path.addRect(CGRect(x: CGFloat(x) * scale, y: CGFloat(y) * scale, width: scale, height: scale))
-                }
-            }
-            ctx.fill(path, with: .color(color))
-        }
-        .frame(width: CGFloat(rows.first?.count ?? 0) * scale, height: CGFloat(rows.count) * scale)
-    }
-
-    static let mark = ["..#..", ".#.#.", "#.#.#", ".#.#.", "..#.."]
-    static let urgent = ["..#..", "..#..", "..#..", ".....", "..#.."]
-    static let soon = [".#.#.", "#...#", ".....", "#...#", ".#.#."]
-    static let fyi = [".###.", "#...#", "#.#.#", "#...#", ".###."]
-    static let off = ["#...#", ".#.#.", "..#..", ".#.#.", "#...#"]
-}
-
-struct StatusPill: View {
-    let label: String
-    let glyph: [String]
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 5) {
-            PixelGlyph(rows: glyph, color: color, scale: 1.4)
-            Text(label.uppercased()).font(Theme.mono(9.5, .semibold)).tracking(0.6)
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
-        .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(color.opacity(0.18)))
-    }
-
-    static func priority(_ p: Int) -> StatusPill {
-        switch p {
-        case 1: return StatusPill(label: "Needs you", glyph: PixelGlyph.urgent, color: Theme.ember)
-        case 2: return StatusPill(label: "Worth a look", glyph: PixelGlyph.soon, color: Theme.blue)
-        default: return StatusPill(label: "FYI", glyph: PixelGlyph.fyi, color: Theme.dim)
-        }
-    }
+private struct HeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 struct PetBubble: View {
     @ObservedObject var model: PetModel
+    @ObservedObject var layout: PetLayout
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             header
-            if let line = model.greeting {
-                greeting(line)
-            } else if let line = model.quip {
-                Text(line).font(Theme.mono(13)).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
-            } else if let toast = model.toast {
-                InsightRow(insight: toast)
-            } else {
-                content
-                footer
+            Group {
+                if let line = model.greeting {
+                    greeting(line)
+                } else if let line = model.quip {
+                    Text(line).font(Theme.serif(21, italic: true)).foregroundStyle(Theme.text)
+                } else if let toast = model.toast {
+                    InsightRow(insight: toast)
+                } else {
+                    content
+                }
             }
+            .padding(.horizontal, 18)
+            .padding(.bottom, model.bubbleOpen ? 0 : 16)
+            if model.bubbleOpen && model.greeting == nil && model.quip == nil && model.toast == nil { footer }
         }
-        .padding(14)
-        .frame(width: 300, alignment: .leading)
-        .background(Theme.card.opacity(0.97), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.line))
-        .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
+        .frame(width: 320, alignment: .leading)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.line))
+        .shadow(color: .black.opacity(0.35), radius: 22, y: 10)
         .environment(\.colorScheme, .dark)
-        .contentShape(Rectangle())
-        .onTapGesture { if model.toast != nil || model.greeting != nil || model.quip != nil { model.toggleBubble() } }
     }
 
     private var header: some View {
-        HStack(spacing: 7) {
-            PixelGlyph(rows: PixelGlyph.mark, color: Theme.code, scale: 1.6)
-            Text("TRINITY").font(Theme.mono(10, .semibold)).tracking(2).foregroundStyle(Theme.text)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("Trinity").font(Theme.serif(22)).foregroundStyle(Theme.text)
+            Text(stamp).font(Theme.sans(12)).foregroundStyle(Theme.text3)
             Spacer()
-            Text(stamp).font(Theme.mono(9.5)).foregroundStyle(Theme.faint)
+            Button { model.toggleBubble() } label: {
+                Image(systemName: "minus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.text2)
+                    .frame(width: 24, height: 24)
+                    .background(Theme.raised, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .alignmentGuide(.firstTextBaseline) { d in d[VerticalAlignment.center] + 4 }
         }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 8)
     }
 
     private var stamp: String {
-        if model.refreshing { return "SYNCING" }
-        if model.toast != nil { return "NEW" }
-        guard let digest = model.digest else { return "" }
+        if model.refreshing { return "syncing…" }
+        if model.toast != nil { return "new" }
+        guard let digest = model.digest, model.greeting == nil, model.quip == nil else { return "" }
         let date = Date(timeIntervalSince1970: digest.generatedAt / 1000)
-        return RelativeDateTimeFormatter().localizedString(for: date, relativeTo: Date()).uppercased()
+        return RelativeDateTimeFormatter().localizedString(for: date, relativeTo: Date())
     }
 
     private func greeting(_ line: String) -> some View {
         let shown = String(line.prefix(model.greetingProgress))
-        let cursor = model.greetingProgress < line.count || Int(model.phase * 2) % 2 == 0
-        return HStack(spacing: 2) {
-            Text(shown).font(Theme.mono(15)).foregroundStyle(Theme.text)
-            Rectangle().fill(Theme.code).frame(width: 7, height: 15).opacity(cursor ? 1 : 0)
+        let caret = model.greetingProgress < line.count || Int(model.phase * 2) % 2 == 0
+        return HStack(alignment: .lastTextBaseline, spacing: 2) {
+            Text(shown).font(Theme.serif(24, italic: true)).foregroundStyle(Theme.text)
+            Rectangle().fill(Theme.code).frame(width: 2, height: 20).opacity(caret ? 1 : 0)
         }
     }
 
     @ViewBuilder
     private var content: some View {
         if let error = model.error, model.digest == nil {
-            HStack(alignment: .top, spacing: 8) {
-                StatusPill(label: "Offline", glyph: PixelGlyph.off, color: Theme.red)
-                Text(error).font(.system(size: 12)).foregroundStyle(Theme.dim).fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("✖").font(Theme.sans(13)).foregroundStyle(Theme.red)
+                Text(error).font(Theme.sans(14)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
             }
+            .padding(.bottom, 12)
         } else if let digest = model.digest {
             Text(digest.headline)
-                .font(.system(size: 15, weight: .medium))
+                .font(Theme.serif(21))
                 .foregroundStyle(Theme.text)
+                .lineSpacing(1)
                 .fixedSize(horizontal: false, vertical: true)
-            if !digest.insights.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(digest.insights.prefix(5).enumerated()), id: \.element.id) { index, insight in
-                        if index > 0 { Rectangle().fill(Theme.line).frame(height: 1) }
-                        InsightRow(insight: insight).padding(.vertical, 9)
-                    }
-                }
+                .padding(.bottom, 10)
+            ScrollView(.vertical, showsIndicators: true) {
+                list(digest).background(GeometryReader { g in Color.clear.preference(key: HeightKey.self, value: g.size.height) })
+            }
+            .frame(height: min(max(layout.listHeight, 1), 300))
+            .onPreferenceChange(HeightKey.self) { value in DispatchQueue.main.async { layout.listHeight = value } }
+        } else {
+            Text("Gathering…").font(Theme.serif(19, italic: true)).foregroundStyle(Theme.text2).padding(.bottom, 12)
+        }
+    }
+
+    private func list(_ digest: Digest) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(digest.insights) { insight in
+                Rectangle().fill(Theme.line).frame(height: 1)
+                InsightRow(insight: insight).padding(.vertical, 11)
             }
             let off = digest.sources.filter { !$0.ok }
             if !off.isEmpty {
-                VStack(alignment: .leading, spacing: 5) {
+                Rectangle().fill(Theme.line).frame(height: 1)
+                VStack(alignment: .leading, spacing: 4) {
                     ForEach(off, id: \.source) { s in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(s.source.uppercased()).font(Theme.mono(9, .semibold)).foregroundStyle(Theme.faint)
-                            Text(s.error ?? "off").font(.system(size: 10.5)).foregroundStyle(Theme.faint).lineLimit(2)
+                            Text("◌").font(Theme.sans(12)).foregroundStyle(Theme.text3)
+                            Text("\(s.source.capitalized) off").font(Theme.sans(12.5, .medium)).foregroundStyle(Theme.text2)
+                            Text(s.error ?? "").font(Theme.sans(12)).foregroundStyle(Theme.text3).lineLimit(1)
                         }
                     }
                 }
+                .padding(.vertical, 10)
             }
-        } else {
-            Text("Gathering…").font(Theme.mono(12)).foregroundStyle(Theme.dim)
         }
     }
 
     private var footer: some View {
-        HStack(spacing: 16) {
-            Button(model.refreshing ? "SYNCING" : "REFRESH") { model.refresh(force: true) }.disabled(model.refreshing)
-            Button("OPEN") { open("http://localhost:6070/") }
+        HStack(spacing: 8) {
+            Button { model.refresh(force: true) } label: {
+                Text(model.refreshing ? "Refreshing…" : "Refresh")
+            }
+            .disabled(model.refreshing)
+            Button { open("http://localhost:6070/brief/") } label: { Text("Open Trinity") }
             Spacer()
-            Button("CLOSE") { model.toggleBubble() }
         }
-        .buttonStyle(.plain)
-        .font(Theme.mono(9.5, .semibold))
-        .tracking(1)
-        .foregroundStyle(Theme.dim)
+        .buttonStyle(PillButton())
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+}
+
+struct PillButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Theme.sans(13.5, .medium))
+            .foregroundStyle(Theme.text)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Theme.raised.opacity(configuration.isPressed ? 0.6 : 1), in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.line))
     }
 }
 
 struct InsightRow: View {
     let insight: Insight
 
+    private var tone: (glyph: String, label: String, color: Color) {
+        switch insight.priority {
+        case 1: return ("◈", "Needs you", Theme.ember)
+        case 2: return ("◇", "Worth a look", Theme.blue)
+        default: return ("⬡", "FYI", Theme.text3)
+        }
+    }
+
     var body: some View {
         Button {
             if let url = insight.url { open(url) } else if insight.source == "whatsapp" { open("whatsapp://") }
         } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    StatusPill.priority(insight.priority)
-                    Text([insight.source, insight.from].compactMap { $0 }.joined(separator: " · ").uppercased())
-                        .font(Theme.mono(9))
-                        .foregroundStyle(Theme.faint)
-                        .lineLimit(1)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(tone.glyph).font(Theme.sans(13)).foregroundStyle(tone.color).frame(width: 14)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(insight.title)
+                        .font(Theme.sans(15.5, .medium))
+                        .foregroundStyle(Theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(insight.detail)
+                        .font(Theme.sans(14))
+                        .foregroundStyle(Theme.text2)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 5) {
+                        Text(tone.label).foregroundStyle(tone.color)
+                        Text("·")
+                        Text([insight.source.capitalized, insight.from].compactMap { $0 }.joined(separator: " · "))
+                    }
+                    .font(Theme.sans(12, .medium))
+                    .foregroundStyle(Theme.text3)
+                    .lineLimit(1)
+                    .padding(.top, 1)
                 }
-                Text(insight.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.text)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(insight.detail)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -212,6 +230,7 @@ final class PetLayout: ObservableObject {
     @Published var creature = CGPoint.zero
     @Published var bubbleX: CGFloat = 0
     @Published var above = true
+    @Published var listHeight: CGFloat = 0
 }
 
 struct PetScene: View {
@@ -224,11 +243,11 @@ struct PetScene: View {
         ZStack(alignment: .bottomLeading) {
             Color.clear
             if model.bubbleOpen || model.toast != nil || model.greeting != nil || model.quip != nil {
-                PetBubble(model: model)
+                PetBubble(model: model, layout: layout)
                     .padding(.leading, layout.bubbleX)
                     .padding(layout.above ? .bottom : .top, layout.above ? layout.creature.y + size.height + 4 : height - layout.creature.y + 4)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: layout.above ? .bottomLeading : .topLeading)
-                    .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95, anchor: layout.above ? .bottom : .top)), removal: .identity))
+                    .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: layout.above ? .bottom : .top)), removal: .identity))
             }
             PixelHead(expression: model.expression, phase: model.phase, look: model.look, badge: model.attention > 0)
                 .offset(x: (model.lookX * 1.5).rounded(), y: -model.hop - (sin(model.phase * 1.3) > 0.4 ? 1 : 0) - (model.lookY * 1.5).rounded() - (model.walking ? (sin(model.phase * 8) > 0 ? 1 : 0) : 0))

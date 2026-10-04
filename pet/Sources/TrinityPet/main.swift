@@ -29,7 +29,7 @@ final class PetHostingView: NSHostingView<PetScene> {
 
 @MainActor
 final class PetController: NSObject {
-    private let windowSize = CGSize(width: 340, height: 440)
+    private let windowSize = CGSize(width: 360, height: 500)
     private let model = PetModel()
     private let layout = PetLayout()
     private let panel: PetPanel
@@ -62,7 +62,16 @@ final class PetController: NSObject {
         model.position = CGPoint(x: visible.midX, y: visible.minY)
     }
 
+    private var outsideClicks: Any?
+
     func start() {
+        Theme.registerFonts()
+        outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.model.bubbleOpen else { return }
+                self.model.toggleBubble()
+            }
+        }
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical], reason: "Trinity pet animation")
         panel.orderFrontRegardless()
         timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
@@ -130,7 +139,7 @@ final class PetController: NSObject {
         let center = CGPoint(x: model.position.x + size.width / 2, y: model.position.y + size.height / 2)
         let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) ?? NSScreen.screens.first ?? NSScreen.main!
         let full = screen.frame
-        let above = full.maxY - (model.position.y + size.height) > 300
+        let above = full.maxY - (model.position.y + size.height) > 420
         let x = min(max(model.position.x + size.width / 2 - windowSize.width / 2, full.minX), full.maxX - windowSize.width)
         let y = above ? model.position.y - 4 : model.position.y + size.height + 24 - windowSize.height
         let frame = NSRect(x: x, y: y, width: windowSize.width, height: windowSize.height)
@@ -139,7 +148,7 @@ final class PetController: NSObject {
         let creature = CGPoint(x: model.position.x - x, y: model.position.y - y)
         if layout.creature != creature { layout.creature = creature }
         if layout.above != above { layout.above = above }
-        let bubbleX = min(max(creature.x + size.width / 2 - 150, 8), windowSize.width - 308)
+        let bubbleX = min(max(creature.x + size.width / 2 - 160, 8), windowSize.width - 328)
         if layout.bubbleX != bubbleX { layout.bubbleX = bubbleX }
 
         let showingBubble = model.bubbleOpen || model.toast != nil || model.greeting != nil || model.quip != nil
@@ -200,7 +209,7 @@ final class PetController: NSObject {
 
     @objc private func refreshNow() { model.refresh(force: true) }
 
-    @objc private func openTrinity() { open("http://localhost:6070/") }
+    @objc private func openTrinity() { open("http://localhost:6070/brief/") }
 
     @objc private func hideForAnHour() {
         model.hidden = true
