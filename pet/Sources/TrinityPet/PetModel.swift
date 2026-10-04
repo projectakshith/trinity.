@@ -26,6 +26,7 @@ struct World {
 enum Surface: Equatable {
     case window(Int)
     case floor(Int)
+    case edge(Int)
 }
 
 private struct Ledge {
@@ -154,7 +155,7 @@ final class PetModel: ObservableObject {
 
         if case .still = motion {
             let dx = world.cursor.x - (position.x + Self.size.width / 2)
-            look = mode == .alert ? 0 : dx > 70 ? 1 : dx < -70 ? -1 : 0
+            if case .edge = surface { look = -1 } else { look = mode == .alert ? 0 : dx > 70 ? 1 : dx < -70 ? -1 : 0 }
         }
     }
 
@@ -207,21 +208,34 @@ final class PetModel: ObservableObject {
         world.screens.firstIndex(where: { $0.frame.contains(point) }) ?? 0
     }
 
-    private func perchable(_ window: WindowInfo, _ world: World) -> Bool {
+    private func span(_ window: WindowInfo, _ world: World) -> (minX: CGFloat, maxX: CGFloat, screen: NSScreen) {
         let screen = world.screens[screenIndex(containing: CGPoint(x: window.frame.midX, y: window.frame.midY), world)]
+        let v = screen.visibleFrame
+        return (max(window.frame.minX, v.minX + 4), min(window.frame.maxX, v.maxX - 4), screen)
+    }
+
+    private func perchable(_ window: WindowInfo, _ world: World) -> Bool {
+        let (minX, maxX, screen) = span(window, world)
         let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
-        return window.frame.width > Self.size.width + 60 && window.frame.maxY + Self.size.height + 4 < screen.frame.maxY - max(menuBar, 24)
+        return maxX - minX > Self.size.width + 60
+            && window.frame.maxY + Self.size.height + 4 < screen.frame.maxY - max(menuBar, 24)
+            && window.frame.maxY > screen.visibleFrame.minY + 40
     }
 
     private func ledge(for surface: Surface, _ world: World) -> Ledge? {
         switch surface {
         case .window(let id):
             guard let w = world.windows.first(where: { $0.id == id }), perchable(w, world) else { return nil }
-            return Ledge(origin: w.frame.minX, top: w.frame.maxY - 2, width: w.frame.width)
+            let (minX, maxX, _) = span(w, world)
+            return Ledge(origin: minX, top: w.frame.maxY - 2, width: maxX - minX)
         case .floor(let index):
             guard world.screens.indices.contains(index) else { return nil }
             let v = world.screens[index].visibleFrame
             return Ledge(origin: v.minX, top: v.minY, width: v.width)
+        case .edge(let index):
+            guard world.screens.indices.contains(index) else { return nil }
+            let v = world.screens[index].visibleFrame
+            return Ledge(origin: v.maxX - Self.size.width * 0.55, top: v.minY + v.height * 0.45, width: Self.size.width)
         }
     }
 
@@ -237,20 +251,21 @@ final class PetModel: ObservableObject {
             let corner = width - size.width - 24
             return Spot(surface: .floor(index), offset: corner, preferred: corner)
         case .alert:
-            if let front, perchable(front, world), front.frame.minX...front.frame.maxX ~= world.cursor.x {
-                let near = world.cursor.x - front.frame.minX - size.width / 2
-                return Spot(surface: .window(front.id), offset: min(max(near, 0), front.frame.width - size.width), preferred: near)
+            if let front, perchable(front, world) {
+                let (minX, maxX, _) = span(front, world)
+                if minX...maxX ~= world.cursor.x {
+                    let near = world.cursor.x - minX - size.width / 2
+                    return Spot(surface: .window(front.id), offset: min(max(near, 0), maxX - minX - size.width), preferred: near)
+                }
             }
-            let v = world.screens[cursorScreen].visibleFrame
-            let near = world.cursor.x - v.minX - size.width / 2
-            return Spot(surface: .floor(cursorScreen), offset: min(max(near, 0), v.width - size.width), preferred: near)
+            return Spot(surface: .edge(cursorScreen), offset: 0, preferred: 0)
         default:
             if let front, perchable(front, world) {
-                return Spot(surface: .window(front.id), offset: nil, preferred: front.frame.width - size.width - 72)
+                let (minX, maxX, _) = span(front, world)
+                return Spot(surface: .window(front.id), offset: nil, preferred: maxX - minX - size.width - 72)
             }
             let index = front.map { screenIndex(containing: CGPoint(x: $0.frame.midX, y: $0.frame.midY), world) } ?? cursorScreen
-            let width = world.screens[index].visibleFrame.width
-            return Spot(surface: .floor(index), offset: nil, preferred: width - size.width - 48)
+            return Spot(surface: .edge(index), offset: 0, preferred: 0)
         }
     }
 
@@ -265,7 +280,10 @@ final class PetModel: ObservableObject {
             return
         }
         look = to.x > position.x ? 1 : -1
-        motion = .jump(from: position, to: spot.surface, offset: target, start: Date(), duration: min(max(Double(dist) / 650 + 0.35, 0.45), 1.05), apex: 26 + dist * 0.12)
+        let screen = world.screens[screenIndex(containing: to, world)].visibleFrame
+        let room = screen.maxY - Self.size.height - max(position.y, to.y)
+        let apex = max(0, min(26 + dist * 0.12, room))
+        motion = .jump(from: position, to: spot.surface, offset: target, start: Date(), duration: min(max(Double(dist) / 650 + 0.35, 0.45), 1.05), apex: apex)
         airborne = true
         walking = false
     }
