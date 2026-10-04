@@ -4,7 +4,7 @@ import { timeAgo } from '@/lib/format';
 import { TopBar } from '@/shell/TopBar';
 import { glyphs } from '@/ui/glyphs';
 import { Icon } from '@/ui/Icon';
-import { InsightItem, sourceName } from './parts';
+import { InsightItem, sourceName, UpcomingList } from './parts';
 import { useBrief } from './state';
 
 export function BriefPage() {
@@ -50,6 +50,15 @@ export function BriefPage() {
               </div>
             </section>
           ))}
+
+          {digest?.upcoming?.length ? (
+            <section className="brief-group">
+              <h2 className="eyebrow">
+                Coming up <span className="count">{digest.upcoming.length}</span>
+              </h2>
+              <UpcomingList items={digest.upcoming} />
+            </section>
+          ) : null}
 
           {digest ? (
             <section className="brief-group">

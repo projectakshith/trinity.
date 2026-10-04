@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { timeAgo } from '@/lib/format';
 import { glyphs } from '@/ui/glyphs';
 import { Icon } from '@/ui/Icon';
-import { BRIEF_HREF, useBrief, type Insight } from './state';
+import { BRIEF_HREF, useBrief, type Insight, type Upcoming } from './state';
 
 const TONES = {
   1: { glyph: glyphs.bullet, label: 'Needs you', tone: 'ember' },
@@ -16,6 +16,37 @@ const SOURCES: Record<string, string> = { whatsapp: 'WhatsApp', mail: 'Mail', ca
 
 export function sourceName(source: string): string {
   return SOURCES[source] ?? source;
+}
+
+function parseWhen(when: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/u.exec(when);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] ?? 0), Number(m[5] ?? 0)) : null;
+}
+
+export function whenLabel(u: Upcoming, now = new Date()): string {
+  const date = parseWhen(u.when);
+  if (!date) return u.whenText || 'Soon';
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const diff = Math.round((day - today) / 86_400_000);
+  const dayText = diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  return u.when.length > 10 ? `${dayText} · ${date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}` : dayText;
+}
+
+export function UpcomingList({ items }: { items: Upcoming[] }) {
+  return (
+    <div className="upcoming-list">
+      {items.map((u) => (
+        <div key={u.id} className="upcoming-row">
+          <span className="upcoming-when">{whenLabel(u)}</span>
+          <span className="upcoming-what">
+            {u.what}
+            {u.who ? <span className="upcoming-who"> · {u.who}</span> : null}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function placeOf(insight: Insight): string {
@@ -72,6 +103,7 @@ export function HomeBrief() {
   }
   if (!digest) return null;
   const top = digest.insights.filter((i) => i.priority <= 2).slice(0, 3);
+  const next = (digest.upcoming ?? []).slice(0, 3);
   return (
     <section className="home-section">
       <h2 className="eyebrow">
@@ -85,6 +117,17 @@ export function HomeBrief() {
               <span key={i.id} className="brief-mini-row">
                 <span className={`insight-glyph ${TONES[i.priority].tone}`}>{TONES[i.priority].glyph}</span>
                 <span className="brief-mini-title">{i.title}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {next.length ? (
+          <div className="brief-mini">
+            <span className="eyebrow">Coming up</span>
+            {next.map((u) => (
+              <span key={u.id} className="brief-mini-row">
+                <span className="upcoming-when small">{whenLabel(u)}</span>
+                <span className="brief-mini-title">{u.what}</span>
               </span>
             ))}
           </div>

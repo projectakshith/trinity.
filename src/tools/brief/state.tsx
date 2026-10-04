@@ -21,11 +21,22 @@ export interface SourceState {
   count: number;
 }
 
+export interface Upcoming {
+  id: string;
+  what: string;
+  when: string;
+  whenText: string;
+  who?: string;
+  chat?: string;
+  source: string;
+}
+
 export interface Digest {
   generatedAt: number;
   headline: string;
   summary: string;
   insights: Insight[];
+  upcoming?: Upcoming[];
   sources: SourceState[];
 }
 

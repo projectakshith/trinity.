@@ -97,6 +97,21 @@ a.insight:hover { background: var(--hover); }
 
 .brief-card:hover .brief-more { color: var(--text); }
 
+.upcoming-list { border: 1px solid var(--border); border-radius: 16px; background: var(--surface); overflow: hidden; }
+
+.upcoming-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 14px; align-items: baseline; padding: 13px 18px; }
+
+.upcoming-row + .upcoming-row { border-top: 1px solid var(--border); }
+
+.upcoming-when { font-size: 13px; font-weight: 500; color: var(--signal); white-space: nowrap; }
+
+.upcoming-when.small { font-size: 12.5px; min-width: 96px; }
+
+.upcoming-what { font-size: 15.5px; }
+
+.upcoming-who { color: var(--text-3); font-size: 14px; }
+
 @media (max-width: 860px) {
+  .upcoming-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .insight { padding: 14px; }
 }
