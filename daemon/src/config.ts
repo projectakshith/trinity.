@@ -56,7 +56,7 @@ export function loadConfig(): Config {
     ...user,
     model: process.env.TRINITY_MODEL ?? user.model ?? DEFAULTS.model,
     google: user.google?.clientId && user.google.clientSecret ? user.google : undefined,
-    groq: user.groq?.apiKey ? { apiKey: user.groq.apiKey, model: user.groq.model || 'openai/gpt-oss-20b' } : undefined,
+    groq: user.groq?.apiKey ? { apiKey: user.groq.apiKey, model: user.groq.model || 'openai/gpt-oss-120b' } : undefined,
     provider: user.provider === 'groq' && user.groq?.apiKey ? 'groq' : 'neo',
   };
 }

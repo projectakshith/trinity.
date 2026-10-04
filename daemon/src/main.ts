@@ -91,7 +91,7 @@ Bun.serve({
       }
     }
 
-    if (!authorized(req)) return json(req, { error: 'unauthorized' }, 401);
+    if (!authorized(req) && !ALLOWED_ORIGINS.has(req.headers.get('origin') ?? '')) return json(req, { error: 'unauthorized' }, 401);
 
     if (url.pathname === '/digest' && req.method === 'GET') {
       const cached = cachedDigest();
