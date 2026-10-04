@@ -85,7 +85,15 @@ final class PetController: NSObject {
             windowsAt = Date()
         }
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-        return World(screens: NSScreen.screens, windows: windows, cursor: NSEvent.mouseLocation, userIdle: idle)
+        let keyIdle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
+        return World(
+            screens: NSScreen.screens,
+            windows: windows,
+            cursor: NSEvent.mouseLocation,
+            userIdle: idle,
+            keyIdle: keyIdle,
+            frontPID: NSWorkspace.shared.frontmostApplication?.processIdentifier
+        )
     }
 
     private static func visibleWindows() -> [WindowInfo] {
@@ -94,14 +102,14 @@ final class PetController: NSObject {
         let me = ProcessInfo.processInfo.processIdentifier
         return list.compactMap { info in
             guard (info[kCGWindowLayer as String] as? Int) == 0,
-                  (info[kCGWindowOwnerPID as String] as? Int32) != me,
+                  let pid = info[kCGWindowOwnerPID as String] as? Int32, pid != me,
                   (info[kCGWindowAlpha as String] as? Double ?? 1) > 0.1,
                   let id = info[kCGWindowNumber as String] as? Int,
                   let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
                   let x = bounds["X"], let y = bounds["Y"], let w = bounds["Width"], let h = bounds["Height"],
                   w > 160, h > 100
             else { return nil }
-            return WindowInfo(id: id, frame: CGRect(x: x, y: primaryHeight - y - h, width: w, height: h))
+            return WindowInfo(id: id, pid: pid, frame: CGRect(x: x, y: primaryHeight - y - h, width: w, height: h))
         }
     }
 
@@ -124,7 +132,7 @@ final class PetController: NSObject {
         let full = screen.frame
         let above = full.maxY - (model.position.y + size.height) > 300
         let x = min(max(model.position.x + size.width / 2 - windowSize.width / 2, full.minX), full.maxX - windowSize.width)
-        let y = above ? model.position.y - 14 : model.position.y + size.height + 14 - windowSize.height
+        let y = above ? model.position.y - 4 : model.position.y + size.height + 24 - windowSize.height
         let frame = NSRect(x: x, y: y, width: windowSize.width, height: windowSize.height)
         if panel.frame != frame { panel.setFrame(frame, display: false) }
 

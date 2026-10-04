@@ -7,8 +7,8 @@ enum Theme {
     static let text = Color(red: 0.93, green: 0.93, blue: 0.92)
     static let dim = Color(red: 0.56, green: 0.56, blue: 0.56)
     static let faint = Color(red: 0.36, green: 0.36, blue: 0.37)
-    static let code = Sprite.code
-    static let ember = Sprite.ember
+    static let code = Color(red: 0.36, green: 1.0, blue: 0.45)
+    static let ember = Color(red: 1.0, green: 0.42, blue: 0.24)
     static let blue = Color(red: 0.33, green: 0.62, blue: 1.0)
     static let red = Color(red: 0.96, green: 0.42, blue: 0.4)
 
@@ -228,8 +228,8 @@ struct PetScene: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: layout.above ? .bottomLeading : .topLeading)
                     .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95, anchor: layout.above ? .bottom : .top)), removal: .identity))
             }
-            PixelHead(expression: model.expression, phase: model.phase, look: model.look, badge: model.attention > 0)
-                .offset(y: -model.hop)
+            PixelHead(expression: model.expression, phase: model.phase, look: Int(model.look), badge: model.attention > 0)
+                .offset(y: -model.hop - (model.walking ? abs(sin(model.phase * 9)) * 2.5 : 0))
                 .padding(.leading, layout.creature.x)
                 .padding(.bottom, layout.creature.y)
         }

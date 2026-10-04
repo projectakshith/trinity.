@@ -2,7 +2,6 @@ import AppKit
 import Combine
 
 enum PetMode: Equatable {
-    case travel
     case rest
     case sleep
     case alert
@@ -11,6 +10,7 @@ enum PetMode: Equatable {
 
 struct WindowInfo {
     let id: Int
+    let pid: pid_t
     let frame: CGRect
 }
 
@@ -19,13 +19,31 @@ struct World {
     var windows: [WindowInfo]
     var cursor: CGPoint
     var userIdle: TimeInterval
+    var keyIdle: TimeInterval
+    var frontPID: pid_t?
 }
 
-private struct Perch {
-    var point: CGPoint
-    var windowID: Int?
-    var windowOffsetX: CGFloat = 0
-    var rest: ClosedRange<Double>
+enum Surface: Equatable {
+    case window(Int)
+    case floor(Int)
+}
+
+private struct Ledge {
+    let origin: CGFloat
+    let top: CGFloat
+    let width: CGFloat
+}
+
+private struct Spot {
+    let surface: Surface
+    let offset: CGFloat?
+    let preferred: CGFloat
+}
+
+private enum Motion {
+    case still
+    case walk(to: CGFloat)
+    case jump(from: CGPoint, to: Surface, offset: CGFloat, start: Date, duration: Double, apex: CGFloat)
 }
 
 @MainActor
@@ -34,8 +52,11 @@ final class PetModel: ObservableObject {
 
     @Published var mode: PetMode = .rest
     @Published var phase: Double = 0
-    @Published var look = 0
+    @Published var look: CGFloat = 0
     @Published var hop: CGFloat = 0
+    @Published var blinking = false
+    @Published var walking = false
+    @Published var airborne = false
     @Published var bubbleOpen = false
     @Published var toast: Insight?
     @Published var greeting: String?
@@ -44,19 +65,22 @@ final class PetModel: ObservableObject {
     @Published var refreshing = false
     @Published var hidden = false
 
-    var position = CGPoint(x: 400, y: 200)
-    private var velocity = CGVector.zero
-    private var target: Perch?
-    private var perch: Perch?
-    private var modeUntil = Date().addingTimeInterval(1)
+    var position = CGPoint(x: 400, y: 0)
+    private var surface: Surface?
+    private var offset: CGFloat = 0
+    private var motion = Motion.still
+    private var nextPace = Date().addingTimeInterval(20)
+    private var nextBlink = Date().addingTimeInterval(2)
+    private var placedUntil = Date.distantPast
     private var toastUntil = Date.distantPast
     private var toastStart = Date.distantPast
     private var greetingStart = Date.distantPast
     private var pendingToast: Insight?
     private var seen: Set<String>
 
-    private let maxSpeed: CGFloat = 230
+    private let walkSpeed: CGFloat = 80
     private let sleepAfter: TimeInterval = 600
+    private let typingPause: TimeInterval = 2.5
     private static let seenKey = "seenInsights"
     private static let greetingKey = "lastGreeting"
 
@@ -74,7 +98,7 @@ final class PetModel: ObservableObject {
 
     var expression: Expression {
         if mode == .held { return .flustered }
-        if mode == .sleep { return .asleep }
+        if mode == .sleep && !airborne { return .asleep }
         if error != nil && digest == nil { return .glitch }
         if toast != nil || greeting != nil || mode == .alert { return .alert }
         if refreshing { return .thinking }
@@ -87,126 +111,184 @@ final class PetModel: ObservableObject {
     func tick(dt: Double, world: World) {
         let now = Date()
         phase += dt
-
-        if let line = greeting, now.timeIntervalSince(greetingStart) > Double(line.count) * 0.07 + 3 {
-            greeting = nil
-            if let next = pendingToast { pendingToast = nil; show(next) } else { rest(for: 1...2) }
-        }
-        if toast != nil && now >= toastUntil {
-            toast = nil
-            if mode == .alert { rest(for: 1...2) }
-        }
-
-        let sinceToast = now.timeIntervalSince(toastStart)
-        if (toast != nil || greeting != nil) && sinceToast < 3 * 1.1 {
-            let cycle = sinceToast.truncatingRemainder(dividingBy: 1.1)
-            hop = cycle < 0.4 ? CGFloat(sin(cycle / 0.4 * .pi)) * 10 : 0
-        } else if mode == .travel {
-            hop = CGFloat(abs(sin(phase * 7))) * 3
-        } else if hop != 0 {
-            hop = 0
-        }
-
+        updateTimers(now)
         if mode == .held { return }
 
         if mode != .alert && !bubbleOpen {
             if world.userIdle > sleepAfter && mode != .sleep {
                 mode = .sleep
-                velocity = .zero
             } else if mode == .sleep && world.userIdle < 2 {
-                rest(for: 1...2)
+                mode = .rest
+                placedUntil = .distantPast
             }
         }
 
-        followPerchedWindow(world)
-
-        if mode == .sleep || mode == .alert || bubbleOpen {
-            look = 0
+        if case .jump = motion {
+            advanceJump(now, world)
             return
         }
+
+        guard let ledge = surface.flatMap({ ledge(for: $0, world) }) else {
+            surface = nil
+            if let spot = desiredSpot(world) { jump(to: spot, world) }
+            return
+        }
+
+        if case .walk(let to) = motion {
+            let step = walkSpeed * CGFloat(dt)
+            let delta = to - offset
+            if abs(delta) <= step {
+                offset = to
+                motion = .still
+            } else {
+                offset += delta > 0 ? step : -step
+                look = delta > 0 ? 1 : -1
+            }
+        }
+        offset = min(max(offset, 0), max(0, ledge.width - Self.size.width))
+        position = CGPoint(x: ledge.origin + offset, y: ledge.top)
+        walking = { if case .walk = motion { return true } else { return false } }()
+
+        guard !bubbleOpen else { look = 0; return }
+        decide(now, world, ledge)
+
+        if case .still = motion {
+            let dx = world.cursor.x - (position.x + Self.size.width / 2)
+            look = mode == .alert ? 0 : dx > 70 ? 1 : dx < -70 ? -1 : 0
+        }
+    }
+
+    private func updateTimers(_ now: Date) {
+        if now >= nextBlink {
+            blinking = true
+            nextBlink = now.addingTimeInterval(.random(in: 2.5...6))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.13) { [weak self] in self?.blinking = false }
+        }
+        if let line = greeting, now.timeIntervalSince(greetingStart) > Double(line.count) * 0.07 + 3 {
+            greeting = nil
+            if let next = pendingToast { pendingToast = nil; show(next) } else { mode = .rest }
+        }
+        if toast != nil && now >= toastUntil {
+            toast = nil
+            if mode == .alert { mode = .rest }
+        }
+        let sinceToast = now.timeIntervalSince(toastStart)
+        if (toast != nil || greeting != nil) && !airborne && sinceToast < 3.3 {
+            let cycle = sinceToast.truncatingRemainder(dividingBy: 1.1)
+            hop = cycle < 0.4 ? CGFloat(sin(cycle / 0.4 * .pi)) * 10 : 0
+        } else if hop != 0 {
+            hop = 0
+        }
+    }
+
+    private func decide(_ now: Date, _ world: World, _ ledge: Ledge) {
+        guard case .still = motion else { return }
+        let typing = world.keyIdle < typingPause
+        guard let spot = desiredSpot(world) else { return }
+
+        if spot.surface != surface {
+            if mode != .alert && (typing || now < placedUntil) { return }
+            jump(to: spot, world)
+            return
+        }
+        if let want = spot.offset, abs(want - offset) > 6, !typing || mode == .alert {
+            motion = .walk(to: want)
+            return
+        }
+        if mode == .rest && !typing && now >= nextPace && now >= placedUntil {
+            nextPace = now.addingTimeInterval(.random(in: 18...40))
+            let span = max(0, ledge.width - Self.size.width)
+            let target = min(max(offset + CGFloat.random(in: 30...90) * (Bool.random() ? 1 : -1), 0), span)
+            motion = .walk(to: target)
+        }
+    }
+
+    private func screenIndex(containing point: CGPoint, _ world: World) -> Int {
+        world.screens.firstIndex(where: { $0.frame.contains(point) }) ?? 0
+    }
+
+    private func perchable(_ window: WindowInfo, _ world: World) -> Bool {
+        let screen = world.screens[screenIndex(containing: CGPoint(x: window.frame.midX, y: window.frame.midY), world)]
+        let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
+        return window.frame.width > Self.size.width + 60 && window.frame.maxY + Self.size.height + 4 < screen.frame.maxY - max(menuBar, 24)
+    }
+
+    private func ledge(for surface: Surface, _ world: World) -> Ledge? {
+        switch surface {
+        case .window(let id):
+            guard let w = world.windows.first(where: { $0.id == id }), perchable(w, world) else { return nil }
+            return Ledge(origin: w.frame.minX, top: w.frame.maxY - 2, width: w.frame.width)
+        case .floor(let index):
+            guard world.screens.indices.contains(index) else { return nil }
+            let v = world.screens[index].visibleFrame
+            return Ledge(origin: v.minX, top: v.minY, width: v.width)
+        }
+    }
+
+    private func desiredSpot(_ world: World) -> Spot? {
+        let size = Self.size
+        let front = world.frontPID.flatMap { pid in world.windows.first(where: { $0.pid == pid }) }
+        let cursorScreen = screenIndex(containing: world.cursor, world)
 
         switch mode {
-        case .travel:
-            guard let target else { rest(for: 0.5...1); return }
-            let dx = target.point.x - position.x
-            let dy = target.point.y - position.y
-            let dist = sqrt(dx * dx + dy * dy)
-            if dist < 1.5 {
-                position = target.point
-                velocity = .zero
-                perch = target
-                self.target = nil
-                rest(for: target.rest)
-                return
+        case .sleep:
+            let index = screenIndex(containing: position, world)
+            let width = world.screens[index].visibleFrame.width
+            let corner = width - size.width - 24
+            return Spot(surface: .floor(index), offset: corner, preferred: corner)
+        case .alert:
+            if let front, perchable(front, world), front.frame.minX...front.frame.maxX ~= world.cursor.x {
+                let near = world.cursor.x - front.frame.minX - size.width / 2
+                return Spot(surface: .window(front.id), offset: min(max(near, 0), front.frame.width - size.width), preferred: near)
             }
-            let speed = min(maxSpeed, dist * 2.6)
-            let want = CGVector(dx: dx / dist * speed, dy: dy / dist * speed)
-            let k = CGFloat(min(1, dt * 5))
-            velocity = CGVector(dx: velocity.dx + (want.dx - velocity.dx) * k, dy: velocity.dy + (want.dy - velocity.dy) * k)
-            position.x += velocity.dx * CGFloat(dt)
-            position.y += velocity.dy * CGFloat(dt)
-            look = velocity.dx > 20 ? 1 : velocity.dx < -20 ? -1 : 0
-        case .rest:
-            let center = CGPoint(x: position.x + Self.size.width / 2, y: position.y + Self.size.height / 2)
-            let dx = world.cursor.x - center.x
-            look = dx > 60 ? 1 : dx < -60 ? -1 : 0
-            if now >= modeUntil { travel(to: nextPerch(world)) }
+            let v = world.screens[cursorScreen].visibleFrame
+            let near = world.cursor.x - v.minX - size.width / 2
+            return Spot(surface: .floor(cursorScreen), offset: min(max(near, 0), v.width - size.width), preferred: near)
         default:
-            break
+            if let front, perchable(front, world) {
+                return Spot(surface: .window(front.id), offset: nil, preferred: front.frame.width - size.width - 72)
+            }
+            let index = front.map { screenIndex(containing: CGPoint(x: $0.frame.midX, y: $0.frame.midY), world) } ?? cursorScreen
+            let width = world.screens[index].visibleFrame.width
+            return Spot(surface: .floor(index), offset: nil, preferred: width - size.width - 48)
         }
     }
 
-    private func followPerchedWindow(_ world: World) {
-        guard mode != .travel, let current = perch, let id = current.windowID else { return }
-        guard let window = world.windows.first(where: { $0.id == id }) else {
-            perch = nil
-            if mode == .rest { modeUntil = Date() }
+    private func jump(to spot: Spot, _ world: World) {
+        guard let ledge = ledge(for: spot.surface, world) else { return }
+        let target = min(max(spot.offset ?? spot.preferred, 0), max(0, ledge.width - Self.size.width))
+        let to = CGPoint(x: ledge.origin + target, y: ledge.top)
+        let dist = hypot(to.x - position.x, to.y - position.y)
+        if dist < 2 {
+            surface = spot.surface
+            offset = target
             return
         }
-        position = CGPoint(x: window.frame.minX + current.windowOffsetX, y: window.frame.maxY - 5)
+        look = to.x > position.x ? 1 : -1
+        motion = .jump(from: position, to: spot.surface, offset: target, start: Date(), duration: min(max(Double(dist) / 650 + 0.35, 0.45), 1.05), apex: 26 + dist * 0.12)
+        airborne = true
+        walking = false
     }
 
-    private func rest(for range: ClosedRange<Double>) {
-        mode = .rest
-        modeUntil = Date().addingTimeInterval(.random(in: range))
-    }
-
-    private func travel(to next: Perch) {
-        target = next
-        perch = nil
-        mode = .travel
-    }
-
-    private func nextPerch(_ world: World) -> Perch {
-        let size = Self.size
-        let screen = world.screens.first(where: { $0.frame.insetBy(dx: -size.width, dy: -size.height).contains(position) }) ?? world.screens.first ?? NSScreen.main!
-        let visible = screen.visibleFrame
-        let clampX = { (x: CGFloat) in min(max(x, visible.minX + 8), visible.maxX - size.width - 8) }
-        let clampY = { (y: CGFloat) in min(max(y, visible.minY), visible.maxY - size.height - 4) }
-
-        let perchable = world.windows.prefix(5).filter { w in
-            w.frame.width > size.width + 40 && w.frame.maxY + size.height < screen.frame.maxY - 26 && visible.intersects(w.frame)
+    private func advanceJump(_ now: Date, _ world: World) {
+        guard case let .jump(from, to, target, start, duration, apex) = motion else { return }
+        guard let ledge = ledge(for: to, world) else {
+            motion = .still
+            airborne = false
+            surface = nil
+            return
         }
-
-        let roll = Double.random(in: 0...1)
-        if roll < 0.38, let window = perchable.randomElement() {
-            let offset = CGFloat.random(in: 16...(window.frame.width - size.width - 16))
-            return Perch(point: CGPoint(x: window.frame.minX + offset, y: window.frame.maxY - 5), windowID: window.id, windowOffsetX: offset, rest: 5...12)
+        let end = CGPoint(x: ledge.origin + target, y: ledge.top)
+        let t = min(1, now.timeIntervalSince(start) / duration)
+        let e = CGFloat(t)
+        position = CGPoint(x: from.x + (end.x - from.x) * e, y: from.y + (end.y - from.y) * e + apex * 4 * e * (1 - e))
+        if t >= 1 {
+            motion = .still
+            airborne = false
+            surface = to
+            offset = target
+            nextPace = now.addingTimeInterval(.random(in: 18...40))
         }
-        if roll < 0.55 {
-            return Perch(point: CGPoint(x: clampX(.random(in: visible.minX...visible.maxX)), y: visible.minY), rest: 3...8)
-        }
-        if roll < 0.7 {
-            let left = Bool.random()
-            let x = left ? visible.minX - size.width * 0.42 : visible.maxX - size.width * 0.58
-            return Perch(point: CGPoint(x: x, y: clampY(.random(in: (visible.minY + 60)...(visible.maxY - 120)))), rest: 3...6)
-        }
-        if roll < 0.85 {
-            let side: CGFloat = Bool.random() ? 1 : -1
-            let point = CGPoint(x: clampX(world.cursor.x + side * .random(in: 70...110) - size.width / 2), y: clampY(world.cursor.y - size.height / 2 + .random(in: -30...30)))
-            return Perch(point: point, rest: 2...4)
-        }
-        return Perch(point: CGPoint(x: clampX(.random(in: visible.minX...visible.maxX)), y: clampY(.random(in: visible.minY...visible.maxY))), rest: 1.5...3.5)
     }
 
     func toggleBubble() {
@@ -216,10 +298,10 @@ final class PetModel: ObservableObject {
         bubbleOpen.toggle()
         if bubbleOpen {
             markAllSeen()
-            if mode == .sleep || mode == .travel { rest(for: 2...4) }
-            velocity = .zero
-        } else {
-            rest(for: 1...2)
+            if mode == .sleep || mode == .alert { mode = .rest }
+            if case .walk = motion { motion = .still }
+        } else if mode == .alert {
+            mode = .rest
         }
     }
 
@@ -227,22 +309,27 @@ final class PetModel: ObservableObject {
         bubbleOpen = false
         toast = nil
         greeting = nil
-        perch = nil
-        target = nil
-        velocity = .zero
+        motion = .still
+        airborne = false
+        walking = false
+        surface = nil
         mode = .held
     }
 
     func drop(world: World) {
+        mode = .rest
+        placedUntil = Date().addingTimeInterval(25)
         let size = Self.size
         if let window = world.windows.first(where: { w in
-            abs(position.y - (w.frame.maxY - 5)) < 28 && position.x > w.frame.minX - 10 && position.x + size.width < w.frame.maxX + 10
+            perchable(w, world) && abs(position.y - (w.frame.maxY - 2)) < 30 && position.x > w.frame.minX - 10 && position.x + size.width < w.frame.maxX + 10
         }) {
-            let offset = min(max(position.x - window.frame.minX, 0), window.frame.width - size.width)
-            perch = Perch(point: .zero, windowID: window.id, windowOffsetX: offset, rest: 6...12)
-            position = CGPoint(x: window.frame.minX + offset, y: window.frame.maxY - 5)
+            surface = .window(window.id)
+            offset = position.x - window.frame.minX
+            return
         }
-        rest(for: 5...10)
+        let index = screenIndex(containing: CGPoint(x: position.x + size.width / 2, y: position.y), world)
+        let v = world.screens[index].visibleFrame
+        jump(to: Spot(surface: .floor(index), offset: position.x - v.minX, preferred: 0), world)
     }
 
     func refresh(force: Bool = false) {
@@ -277,7 +364,7 @@ final class PetModel: ObservableObject {
             greetingStart = Date()
             toastStart = Date()
             pendingToast = top
-            stopForAttention()
+            mode = .alert
             return
         }
         if let top { show(top) }
@@ -287,14 +374,7 @@ final class PetModel: ObservableObject {
         toast = insight
         toastUntil = Date().addingTimeInterval(insight.priority == 1 ? 14 : 8)
         toastStart = Date()
-        stopForAttention()
-    }
-
-    private func stopForAttention() {
-        guard mode != .held else { return }
-        velocity = .zero
-        target = nil
-        mode = .alert
+        if mode != .held { mode = .alert }
     }
 
     private func markAllSeen() {
