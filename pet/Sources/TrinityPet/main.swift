@@ -156,6 +156,7 @@ final class PetController: NSObject {
 
         if let text = model.greeting ?? model.quip, layout.frozenText != text { layout.frozenText = text }
         if let toast = model.toast, layout.frozenToast != toast { layout.frozenToast = toast }
+        if let question = model.question, layout.frozenQuestion != question { layout.frozenQuestion = question }
         let showingBubble = model.bubbleKind != nil
         let ignore = !(showingBubble || pressing || creatureRect.contains(NSEvent.mouseLocation))
         if panel.ignoresMouseEvents != ignore { panel.ignoresMouseEvents = ignore }

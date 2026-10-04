@@ -72,6 +72,7 @@ final class PetModel: ObservableObject {
     @Published var toast: Insight?
     @Published var greeting: String?
     @Published var quip: String?
+    @Published var question: Upcoming?
     @Published var digest: Digest?
     @Published var error: String?
     @Published var refreshing = false
@@ -102,6 +103,8 @@ final class PetModel: ObservableObject {
     private static let greetingKey = "lastGreeting"
     private static let homeKey = "home"
     private static let remindedKey = "remindedUpcoming"
+    private static let askedKey = "askedUpcoming"
+    private var questionUntil = Date.distantPast
 
     init() {
         seen = Set(UserDefaults.standard.stringArray(forKey: Self.seenKey) ?? [])
@@ -119,6 +122,7 @@ final class PetModel: ObservableObject {
         if greeting != nil { return .greeting }
         if quip != nil { return .quip }
         if toast != nil { return .toast }
+        if question != nil { return .ask }
         if bubbleOpen { return .full }
         return nil
     }
@@ -134,7 +138,7 @@ final class PetModel: ObservableObject {
         if toast != nil || greeting != nil || mode == .alert { return .alert }
         if Date() < annoyedUntil { return .annoyed }
         if refreshing { return .thinking }
-        if bubbleOpen || quip != nil { return .talking }
+        if bubbleOpen || quip != nil || question != nil { return .talking }
         if attention > 0 { return .focused }
         if let digest, digest.insights.isEmpty, digest.sources.contains(where: \.ok) { return .chill }
         return .neutral
@@ -251,6 +255,7 @@ final class PetModel: ObservableObject {
             if mode == .alert { mode = .rest }
         }
         if quip != nil && now >= quipUntil { quip = nil }
+        if question != nil && now >= questionUntil { question = nil }
         let sinceToast = now.timeIntervalSince(toastStart)
         if (toast != nil || greeting != nil) && sinceToast < 1.6 {
             let cycle = sinceToast.truncatingRemainder(dividingBy: 0.8)
@@ -261,7 +266,7 @@ final class PetModel: ObservableObject {
     }
 
     private func say(_ line: String, for seconds: TimeInterval) {
-        guard greeting == nil, toast == nil, !bubbleOpen else { return }
+        guard greeting == nil, toast == nil, question == nil, !bubbleOpen else { return }
         quip = line
         quipUntil = Date().addingTimeInterval(seconds)
     }
@@ -429,6 +434,7 @@ final class PetModel: ObservableObject {
             toggleBubble()
             return
         }
+        question = nil
         toast = nil
         greeting = nil
         quip = nil
@@ -437,6 +443,7 @@ final class PetModel: ObservableObject {
     }
 
     func toggleBubble() {
+        question = nil
         toast = nil
         greeting = nil
         quip = nil
@@ -508,13 +515,32 @@ final class PetModel: ObservableObject {
             return
         }
         if let top { show(top); return }
-        if !bubbleOpen, let due = dueReminder(next) { show(due) }
+        if !bubbleOpen, let due = dueReminder(next) { show(due); return }
+        if !bubbleOpen, question == nil, toast == nil, let ask = nextQuestion(next) { question = ask; questionUntil = Date().addingTimeInterval(30) }
+    }
+
+    private func nextQuestion(_ digest: Digest) -> Upcoming? {
+        var asked = UserDefaults.standard.dictionary(forKey: Self.askedKey) as? [String: Double] ?? [:]
+        let now = Date().timeIntervalSince1970
+        guard let item = (digest.upcoming ?? []).first(where: { ($0.status ?? "pending") == "pending" && now - (asked[$0.id] ?? 0) > 6 * 3600 }) else { return nil }
+        asked[item.id] = now
+        UserDefaults.standard.set(asked.filter { now - $0.value < 14 * 86400 }, forKey: Self.askedKey)
+        return item
+    }
+
+    func answer(remind: Bool) {
+        guard let item = question else { return }
+        question = nil
+        say(remind ? ["Noted. I'll remind you.", "Fine. I'll nag you.", "Got it."].randomElement()! : ["Forgotten.", "Whatever you say.", "Gone."].randomElement()!, for: 2)
+        Task {
+            if let next = try? await Daemon.setUpcoming(item.id, status: remind ? "remind" : "skip") { digest = next }
+        }
     }
 
     private func dueReminder(_ digest: Digest) -> Insight? {
         let now = Date()
         var reminded = Set(UserDefaults.standard.stringArray(forKey: Self.remindedKey) ?? [])
-        for item in digest.upcoming ?? [] {
+        for item in digest.upcoming ?? [] where item.status == "remind" {
             guard let date = item.date else { continue }
             let key: String
             if item.timed {

@@ -27,6 +27,7 @@ struct Upcoming: Codable, Identifiable, Equatable {
     let who: String?
     let chat: String?
     let source: String
+    let status: String?
 
     var date: Date? {
         let parts = when.split(whereSeparator: { "-T: ".contains($0) }).compactMap { Int($0) }
@@ -83,6 +84,18 @@ struct Daemon {
         let path = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".trinity/daemon.json")
         guard let data = try? Data(contentsOf: path) else { return nil }
         return try? JSONDecoder().decode(DaemonFile.self, from: data)
+    }
+
+    static func setUpcoming(_ id: String, status: String) async throws -> Digest? {
+        guard let file, let base = URL(string: file.url) else { throw DaemonError.notRunning }
+        var request = URLRequest(url: base.appendingPathComponent("upcoming/\(id)"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(file.token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["status": status])
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try JSONDecoder().decode(DigestResponse.self, from: data).digest
     }
 
     static func digest(refresh: Bool = false) async throws -> Digest {

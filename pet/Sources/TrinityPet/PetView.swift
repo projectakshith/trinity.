@@ -38,6 +38,7 @@ enum BubbleKind: Equatable {
     case greeting
     case quip
     case toast
+    case ask
     case full
 }
 
@@ -57,6 +58,8 @@ struct PetBubble: View {
                     Text(model.quip ?? layout.frozenText).font(Theme.serif(21, italic: true)).foregroundStyle(Theme.text)
                 case .toast:
                     if let toast = model.toast ?? layout.frozenToast { InsightRow(insight: toast) }
+                case .ask:
+                    if let item = model.question ?? layout.frozenQuestion { ask(item) }
                 case .full:
                     content
                 }
@@ -90,6 +93,20 @@ struct PetBubble: View {
         .padding(.horizontal, 18)
         .padding(.top, 14)
         .padding(.bottom, 8)
+    }
+
+    private func ask(_ item: Upcoming) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Want a reminder?").font(Theme.serif(21, italic: true)).foregroundStyle(Theme.text)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(item.label).font(Theme.sans(12.5, .medium)).foregroundStyle(Theme.signal)
+                Text(item.what + (item.who.map { " · \($0)" } ?? "")).font(Theme.sans(15, .medium)).foregroundStyle(Theme.text).lineLimit(2)
+            }
+            HStack(spacing: 8) {
+                Button { model.answer(remind: true) } label: { Text("Remind me") }.buttonStyle(PillButton(primary: true))
+                Button { model.answer(remind: false) } label: { Text("Nah") }.buttonStyle(PillButton())
+            }
+        }
     }
 
     private var stamp: String {
@@ -145,8 +162,9 @@ struct PetBubble: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Text("Coming up").font(Theme.sans(12, .semibold)).foregroundStyle(Theme.text3)
                     ForEach(upcoming.prefix(5)) { u in
+                        let reminding = u.status == "remind"
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text(u.label).font(Theme.sans(12.5, .medium)).foregroundStyle(Theme.signal).frame(width: 96, alignment: .leading)
+                            Text((reminding ? "◈ " : "◇ ") + u.label).font(Theme.sans(12.5, .medium)).foregroundStyle(reminding ? Theme.signal : Theme.text3).frame(width: 110, alignment: .leading)
                             Text(u.what + (u.who.map { " · \($0)" } ?? "")).font(Theme.sans(14)).foregroundStyle(Theme.text).lineLimit(2)
                         }
                     }
@@ -187,13 +205,15 @@ struct PetBubble: View {
 }
 
 struct PillButton: ButtonStyle {
+    var primary = false
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.sans(13.5, .medium))
-            .foregroundStyle(Theme.text)
+            .foregroundStyle(primary ? Theme.surface : Theme.text)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(Theme.raised.opacity(configuration.isPressed ? 0.6 : 1), in: Capsule())
+            .background((primary ? Theme.text : Theme.raised).opacity(configuration.isPressed ? 0.7 : 1), in: Capsule())
             .overlay(Capsule().strokeBorder(Theme.line))
     }
 }
@@ -264,6 +284,7 @@ final class PetLayout: ObservableObject {
     @Published var lastKind: BubbleKind = .full
     var frozenText = ""
     var frozenToast: Insight?
+    var frozenQuestion: Upcoming?
 }
 
 struct PetScene: View {
