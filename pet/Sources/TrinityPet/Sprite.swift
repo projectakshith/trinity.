@@ -25,8 +25,8 @@ enum Sprite {
 
     static let ink = Color(red: 0.05, green: 0.05, blue: 0.05)
     static let paper = Color(red: 0.95, green: 0.95, blue: 0.93)
-    static let hairLit = Color(red: 0.0, green: 1.0, blue: 0.255)
-    static let hairShade = Color(red: 0.0, green: 0.56, blue: 0.067)
+    static let hairLit = Color(red: 0.0, green: 0.56, blue: 0.067)
+    static let hairShade = Color(red: 0.0, green: 0.33, blue: 0.05)
     static let halo = Color.white.opacity(0.9)
     static let code = Color(red: 0.36, green: 1.0, blue: 0.45)
     static let ember = Color(red: 1.0, green: 0.42, blue: 0.24)
