@@ -140,6 +140,19 @@ struct PetBubble: View {
                 Rectangle().fill(Theme.line).frame(height: 1)
                 InsightRow(insight: insight).padding(.vertical, 11)
             }
+            if let upcoming = digest.upcoming, !upcoming.isEmpty {
+                Rectangle().fill(Theme.line).frame(height: 1)
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Coming up").font(Theme.sans(12, .semibold)).foregroundStyle(Theme.text3)
+                    ForEach(upcoming.prefix(5)) { u in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(u.label).font(Theme.sans(12.5, .medium)).foregroundStyle(Theme.signal).frame(width: 96, alignment: .leading)
+                            Text(u.what + (u.who.map { " · \($0)" } ?? "")).font(Theme.sans(14)).foregroundStyle(Theme.text).lineLimit(2)
+                        }
+                    }
+                }
+                .padding(.vertical, 11)
+            }
             let off = digest.sources.filter { !$0.ok }
             if !off.isEmpty {
                 Rectangle().fill(Theme.line).frame(height: 1)

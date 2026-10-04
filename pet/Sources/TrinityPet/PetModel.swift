@@ -101,6 +101,7 @@ final class PetModel: ObservableObject {
     private static let seenKey = "seenInsights"
     private static let greetingKey = "lastGreeting"
     private static let homeKey = "home"
+    private static let remindedKey = "remindedUpcoming"
 
     init() {
         seen = Set(UserDefaults.standard.stringArray(forKey: Self.seenKey) ?? [])
@@ -506,7 +507,32 @@ final class PetModel: ObservableObject {
             mode = .alert
             return
         }
-        if let top { show(top) }
+        if let top { show(top); return }
+        if !bubbleOpen, let due = dueReminder(next) { show(due) }
+    }
+
+    private func dueReminder(_ digest: Digest) -> Insight? {
+        let now = Date()
+        var reminded = Set(UserDefaults.standard.stringArray(forKey: Self.remindedKey) ?? [])
+        for item in digest.upcoming ?? [] {
+            guard let date = item.date else { continue }
+            let key: String
+            if item.timed {
+                let lead = date.timeIntervalSince(now)
+                guard lead > 0, lead <= 3600 else { continue }
+                key = "\(item.id):soon"
+            } else {
+                guard Calendar.current.isDateInToday(date) else { continue }
+                key = "\(item.id):day"
+            }
+            guard !reminded.contains(key) else { continue }
+            reminded.insert(key)
+            UserDefaults.standard.set(Array(reminded.suffix(200)), forKey: Self.remindedKey)
+            let minutes = Int(date.timeIntervalSince(now) / 60)
+            let detail = item.timed ? "In \(minutes) min. Don't be late." : "It's today."
+            return Insight(id: "up:\(key)", source: item.source, priority: 1, title: item.what, detail: detail, from: item.who, chat: item.chat ?? item.who, group: nil, url: nil)
+        }
+        return nil
     }
 
     private func show(_ insight: Insight) {

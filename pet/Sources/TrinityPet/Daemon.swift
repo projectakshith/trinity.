@@ -19,11 +19,40 @@ struct SourceState: Codable, Equatable {
     let count: Int
 }
 
+struct Upcoming: Codable, Identifiable, Equatable {
+    let id: String
+    let what: String
+    let when: String
+    let whenText: String
+    let who: String?
+    let chat: String?
+    let source: String
+
+    var date: Date? {
+        let parts = when.split(whereSeparator: { "-T: ".contains($0) }).compactMap { Int($0) }
+        guard parts.count >= 3 else { return nil }
+        return Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: parts.count > 3 ? parts[3] : 0, minute: parts.count > 4 ? parts[4] : 0))
+    }
+
+    var timed: Bool { when.count > 10 }
+
+    var label: String {
+        guard let date else { return whenText.isEmpty ? "Soon" : whenText }
+        let cal = Calendar.current
+        let day: String
+        if cal.isDateInToday(date) { day = "Today" }
+        else if cal.isDateInTomorrow(date) { day = "Tomorrow" }
+        else { day = date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) }
+        return timed ? "\(day) · \(date.formatted(date: .omitted, time: .shortened))" : day
+    }
+}
+
 struct Digest: Codable, Equatable {
     let generatedAt: Double
     let headline: String
     let summary: String
     let insights: [Insight]
+    let upcoming: [Upcoming]?
     let sources: [SourceState]
 }
 
