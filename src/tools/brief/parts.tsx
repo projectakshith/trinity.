@@ -18,6 +18,13 @@ export function sourceName(source: string): string {
   return SOURCES[source] ?? source;
 }
 
+export function placeOf(insight: Insight): string {
+  const chat = insight.chat ?? insight.from;
+  const parts = [sourceName(insight.source), chat];
+  if (insight.from && insight.from !== chat) parts.push(insight.from);
+  return parts.filter(Boolean).join(' · ');
+}
+
 export function InsightItem({ insight }: { insight: Insight }) {
   const t = TONES[insight.priority];
   const body = (
@@ -25,11 +32,8 @@ export function InsightItem({ insight }: { insight: Insight }) {
       <span className={`insight-glyph ${t.tone}`}>{t.glyph}</span>
       <span className="insight-text">
         <span className="insight-title">{insight.title}</span>
-        <span className="insight-detail">{insight.detail}</span>
-        <span className="insight-meta">
-          <span className={`pill ${t.tone}`}>{t.label}</span>
-          <span>{[sourceName(insight.source), insight.from].filter(Boolean).join(' · ')}</span>
-        </span>
+        <span className="insight-meta">{placeOf(insight)}</span>
+        {insight.detail ? <span className="insight-detail">{insight.detail}</span> : null}
       </span>
     </>
   );

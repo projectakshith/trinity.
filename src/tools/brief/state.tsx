@@ -9,6 +9,8 @@ export interface Insight {
   title: string;
   detail: string;
   from?: string;
+  chat?: string;
+  group?: boolean;
   url?: string;
 }
 
