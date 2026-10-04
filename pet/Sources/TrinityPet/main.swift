@@ -29,7 +29,7 @@ final class PetHostingView: NSHostingView<PetScene> {
 
 @MainActor
 final class PetController: NSObject {
-    private let windowSize = CGSize(width: 360, height: 500)
+    private let windowSize = CGSize(width: 360, height: 560)
     private let model = PetModel()
     private let layout = PetLayout()
     private let panel: PetPanel
@@ -68,8 +68,8 @@ final class PetController: NSObject {
         Theme.registerFonts()
         outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.model.bubbleOpen else { return }
-                self.model.toggleBubble()
+                guard let self, self.model.bubbleKind != nil else { return }
+                self.model.dismissBubble()
             }
         }
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical], reason: "Trinity pet animation")
@@ -139,7 +139,7 @@ final class PetController: NSObject {
         let center = CGPoint(x: model.position.x + size.width / 2, y: model.position.y + size.height / 2)
         let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) ?? NSScreen.screens.first ?? NSScreen.main!
         let full = screen.frame
-        let above = full.maxY - (model.position.y + size.height) > 420
+        let above = full.maxY - (model.position.y + size.height) > 480
         let x = min(max(model.position.x + size.width / 2 - windowSize.width / 2, full.minX), full.maxX - windowSize.width)
         let y = above ? model.position.y - 4 : model.position.y + size.height + 24 - windowSize.height
         let frame = NSRect(x: x, y: y, width: windowSize.width, height: windowSize.height)
@@ -150,8 +150,13 @@ final class PetController: NSObject {
         if layout.above != above { layout.above = above }
         let bubbleX = min(max(creature.x + size.width / 2 - 160, 8), windowSize.width - 328)
         if layout.bubbleX != bubbleX { layout.bubbleX = bubbleX }
+        let room = above ? windowSize.height - creature.y - size.height - 12 : creature.y - 12
+        let cap = max(90, min(320, room - 250))
+        if layout.listCap != cap { layout.listCap = cap }
 
-        let showingBubble = model.bubbleOpen || model.toast != nil || model.greeting != nil || model.quip != nil
+        if let text = model.greeting ?? model.quip, layout.frozenText != text { layout.frozenText = text }
+        if let toast = model.toast, layout.frozenToast != toast { layout.frozenToast = toast }
+        let showingBubble = model.bubbleKind != nil
         let ignore = !(showingBubble || pressing || creatureRect.contains(NSEvent.mouseLocation))
         if panel.ignoresMouseEvents != ignore { panel.ignoresMouseEvents = ignore }
     }

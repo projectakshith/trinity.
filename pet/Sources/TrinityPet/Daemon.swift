@@ -7,6 +7,8 @@ struct Insight: Codable, Identifiable, Equatable {
     let title: String
     let detail: String
     let from: String?
+    let chat: String?
+    let group: Bool?
     let url: String?
 }
 

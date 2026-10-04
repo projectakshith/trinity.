@@ -34,27 +34,36 @@ private struct HeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
+enum BubbleKind: Equatable {
+    case greeting
+    case quip
+    case toast
+    case full
+}
+
 struct PetBubble: View {
     @ObservedObject var model: PetModel
     @ObservedObject var layout: PetLayout
+    let kind: BubbleKind
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Group {
-                if let line = model.greeting {
-                    greeting(line)
-                } else if let line = model.quip {
-                    Text(line).font(Theme.serif(21, italic: true)).foregroundStyle(Theme.text)
-                } else if let toast = model.toast {
-                    InsightRow(insight: toast)
-                } else {
+                switch kind {
+                case .greeting:
+                    greeting(model.greeting ?? layout.frozenText)
+                case .quip:
+                    Text(model.quip ?? layout.frozenText).font(Theme.serif(21, italic: true)).foregroundStyle(Theme.text)
+                case .toast:
+                    if let toast = model.toast ?? layout.frozenToast { InsightRow(insight: toast) }
+                case .full:
                     content
                 }
             }
             .padding(.horizontal, 18)
-            .padding(.bottom, model.bubbleOpen ? 0 : 16)
-            if model.bubbleOpen && model.greeting == nil && model.quip == nil && model.toast == nil { footer }
+            .padding(.bottom, kind == .full ? 0 : 16)
+            if kind == .full { footer }
         }
         .frame(width: 320, alignment: .leading)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -68,7 +77,7 @@ struct PetBubble: View {
             Text("Trinity").font(Theme.serif(22)).foregroundStyle(Theme.text)
             Text(stamp).font(Theme.sans(12)).foregroundStyle(Theme.text3)
             Spacer()
-            Button { model.toggleBubble() } label: {
+            Button { model.dismissBubble() } label: {
                 Image(systemName: "minus")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.text2)
@@ -118,7 +127,7 @@ struct PetBubble: View {
             ScrollView(.vertical, showsIndicators: true) {
                 list(digest).background(GeometryReader { g in Color.clear.preference(key: HeightKey.self, value: g.size.height) })
             }
-            .frame(height: min(max(layout.listHeight, 1), 300))
+            .frame(height: min(max(layout.listHeight, 1), layout.listCap))
             .onPreferenceChange(HeightKey.self) { value in DispatchQueue.main.async { layout.listHeight = value } }
         } else {
             Text("Gathering…").font(Theme.serif(19, italic: true)).foregroundStyle(Theme.text2).padding(.bottom, 12)
@@ -179,12 +188,21 @@ struct PillButton: ButtonStyle {
 struct InsightRow: View {
     let insight: Insight
 
-    private var tone: (glyph: String, label: String, color: Color) {
+    private var tone: (glyph: String, color: Color) {
         switch insight.priority {
-        case 1: return ("◈", "Needs you", Theme.ember)
-        case 2: return ("◇", "Worth a look", Theme.blue)
-        default: return ("⬡", "FYI", Theme.text3)
+        case 1: return ("◈", Theme.ember)
+        case 2: return ("◇", Theme.blue)
+        default: return ("⬡", Theme.text3)
         }
+    }
+
+    private var place: String {
+        let source = ["whatsapp": "WhatsApp", "mail": "Mail", "calendar": "Calendar"][insight.source] ?? insight.source.capitalized
+        let chat = insight.chat ?? insight.from
+        var parts = [source]
+        if let chat, !chat.isEmpty { parts.append(chat) }
+        if let sender = insight.from, !sender.isEmpty, sender != chat { parts.append(sender) }
+        return parts.joined(separator: " · ")
     }
 
     var body: some View {
@@ -193,25 +211,23 @@ struct InsightRow: View {
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(tone.glyph).font(Theme.sans(13)).foregroundStyle(tone.color).frame(width: 14)
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(insight.title)
                         .font(Theme.sans(15.5, .medium))
                         .foregroundStyle(Theme.text)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(insight.detail)
-                        .font(Theme.sans(14))
-                        .foregroundStyle(Theme.text2)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 5) {
-                        Text(tone.label).foregroundStyle(tone.color)
-                        Text("·")
-                        Text([insight.source.capitalized, insight.from].compactMap { $0 }.joined(separator: " · "))
+                    Text(place)
+                        .font(Theme.sans(12.5, .medium))
+                        .foregroundStyle(Theme.text3)
+                        .lineLimit(1)
+                    if !insight.detail.isEmpty {
+                        Text(insight.detail)
+                            .font(Theme.sans(13.5))
+                            .foregroundStyle(Theme.text2)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 2)
                     }
-                    .font(Theme.sans(12, .medium))
-                    .foregroundStyle(Theme.text3)
-                    .lineLimit(1)
-                    .padding(.top, 1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -231,6 +247,10 @@ final class PetLayout: ObservableObject {
     @Published var bubbleX: CGFloat = 0
     @Published var above = true
     @Published var listHeight: CGFloat = 0
+    @Published var listCap: CGFloat = 300
+    @Published var lastKind: BubbleKind = .full
+    var frozenText = ""
+    var frozenToast: Insight?
 }
 
 struct PetScene: View {
@@ -241,13 +261,16 @@ struct PetScene: View {
     var body: some View {
         let size = PetModel.size
         ZStack(alignment: .bottomLeading) {
-            Color.clear
-            if model.bubbleOpen || model.toast != nil || model.greeting != nil || model.quip != nil {
-                PetBubble(model: model, layout: layout)
+            Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+            if let kind = model.bubbleKind {
+                PetBubble(model: model, layout: layout, kind: kind)
                     .padding(.leading, layout.bubbleX)
                     .padding(layout.above ? .bottom : .top, layout.above ? layout.creature.y + size.height + 4 : height - layout.creature.y + 4)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: layout.above ? .bottomLeading : .topLeading)
-                    .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: layout.above ? .bottom : .top)), removal: .identity))
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: layout.above ? .bottom : .top)),
+                        removal: .opacity.animation(.easeOut(duration: 0.14))
+                    ))
             }
             PixelHead(expression: model.expression, phase: model.phase, look: model.look, badge: model.attention > 0)
                 .offset(x: (model.lookX * 1.5).rounded(), y: -model.hop - (sin(model.phase * 1.3) > 0.4 ? 1 : 0) - (model.lookY * 1.5).rounded() - (model.walking ? (sin(model.phase * 8) > 0 ? 1 : 0) : 0))
@@ -255,9 +278,8 @@ struct PetScene: View {
                 .padding(.leading, layout.creature.x)
                 .padding(.bottom, layout.creature.y)
         }
-        .animation(.spring(response: 0.26, dampingFraction: 0.85), value: model.bubbleOpen)
-        .animation(.spring(response: 0.26, dampingFraction: 0.85), value: model.toast)
-        .animation(.spring(response: 0.26, dampingFraction: 0.85), value: model.greeting)
-        .animation(.spring(response: 0.26, dampingFraction: 0.85), value: model.quip)
+        .frame(width: 360, height: height, alignment: .bottomLeading)
+        .clipped()
+        .animation(.spring(response: 0.28, dampingFraction: 0.9), value: model.bubbleKind)
     }
 }

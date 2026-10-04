@@ -114,6 +114,14 @@ final class PetModel: ObservableObject {
         Int(Date().timeIntervalSince(greetingStart) / 0.07)
     }
 
+    var bubbleKind: BubbleKind? {
+        if greeting != nil { return .greeting }
+        if quip != nil { return .quip }
+        if toast != nil { return .toast }
+        if bubbleOpen { return .full }
+        return nil
+    }
+
     var look: Int {
         lookX > 0.4 ? 1 : lookX < -0.4 ? -1 : 0
     }
@@ -413,6 +421,18 @@ final class PetModel: ObservableObject {
             return
         }
         toggleBubble()
+    }
+
+    func dismissBubble() {
+        if bubbleOpen {
+            toggleBubble()
+            return
+        }
+        toast = nil
+        greeting = nil
+        quip = nil
+        pendingToast = nil
+        if mode == .alert { mode = .rest }
     }
 
     func toggleBubble() {
