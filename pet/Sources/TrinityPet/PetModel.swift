@@ -26,19 +26,28 @@ struct World {
 enum Surface: Equatable {
     case window(Int)
     case floor(Int)
-    case edge(Int)
+    case side(Int, right: Bool)
 }
 
 private struct Ledge {
-    let origin: CGFloat
-    let top: CGFloat
-    let width: CGFloat
+    let start: CGPoint
+    let vertical: Bool
+    let length: CGFloat
+
+    func point(_ offset: CGFloat) -> CGPoint {
+        vertical ? CGPoint(x: start.x, y: start.y + offset) : CGPoint(x: start.x + offset, y: start.y)
+    }
+
+    func clamp(_ offset: CGFloat) -> CGFloat {
+        min(max(offset, 0), max(0, length))
+    }
 }
 
 private struct Spot {
     let surface: Surface
     let offset: CGFloat?
     let preferred: CGFloat
+    var tolerance: CGFloat = 6
 }
 
 private enum Motion {
@@ -73,6 +82,8 @@ final class PetModel: ObservableObject {
     private var nextPace = Date().addingTimeInterval(20)
     private var nextBlink = Date().addingTimeInterval(2)
     private var placedUntil = Date.distantPast
+    private var exploreSpot: Spot?
+    private var nextExplore = Date.distantPast
     private var toastUntil = Date.distantPast
     private var toastStart = Date.distantPast
     private var greetingStart = Date.distantPast
@@ -82,6 +93,7 @@ final class PetModel: ObservableObject {
     private let walkSpeed: CGFloat = 80
     private let sleepAfter: TimeInterval = 600
     private let typingPause: TimeInterval = 2.5
+    private let exploreAfter: TimeInterval = 30
     private static let seenKey = "seenInsights"
     private static let greetingKey = "lastGreeting"
 
@@ -146,8 +158,8 @@ final class PetModel: ObservableObject {
                 look = delta > 0 ? 1 : -1
             }
         }
-        offset = min(max(offset, 0), max(0, ledge.width - Self.size.width))
-        position = CGPoint(x: ledge.origin + offset, y: ledge.top)
+        offset = ledge.clamp(offset)
+        position = ledge.point(offset)
         walking = { if case .walk = motion { return true } else { return false } }()
 
         guard !bubbleOpen else { look = 0; return }
@@ -155,7 +167,7 @@ final class PetModel: ObservableObject {
 
         if case .still = motion {
             let dx = world.cursor.x - (position.x + Self.size.width / 2)
-            if case .edge = surface { look = -1 } else { look = mode == .alert ? 0 : dx > 70 ? 1 : dx < -70 ? -1 : 0 }
+            if case .side(_, let right) = surface { look = right ? -1 : 1 } else { look = mode == .alert ? 0 : dx > 70 ? 1 : dx < -70 ? -1 : 0 }
         }
     }
 
@@ -185,22 +197,20 @@ final class PetModel: ObservableObject {
     private func decide(_ now: Date, _ world: World, _ ledge: Ledge) {
         guard case .still = motion else { return }
         let typing = world.keyIdle < typingPause
-        guard let spot = desiredSpot(world) else { return }
+        guard let spot = desiredSpot(world, now) else { return }
 
         if spot.surface != surface {
             if mode != .alert && (typing || now < placedUntil) { return }
             jump(to: spot, world)
             return
         }
-        if let want = spot.offset, abs(want - offset) > 6, !typing || mode == .alert {
+        if let want = spot.offset.map(ledge.clamp), abs(want - offset) > spot.tolerance, !typing || mode == .alert {
             motion = .walk(to: want)
             return
         }
         if mode == .rest && !typing && now >= nextPace && now >= placedUntil {
             nextPace = now.addingTimeInterval(.random(in: 18...40))
-            let span = max(0, ledge.width - Self.size.width)
-            let target = min(max(offset + CGFloat.random(in: 30...90) * (Bool.random() ? 1 : -1), 0), span)
-            motion = .walk(to: target)
+            motion = .walk(to: ledge.clamp(offset + CGFloat.random(in: 30...90) * (Bool.random() ? 1 : -1)))
         }
     }
 
@@ -223,56 +233,98 @@ final class PetModel: ObservableObject {
     }
 
     private func ledge(for surface: Surface, _ world: World) -> Ledge? {
+        let size = Self.size
         switch surface {
         case .window(let id):
             guard let w = world.windows.first(where: { $0.id == id }), perchable(w, world) else { return nil }
             let (minX, maxX, _) = span(w, world)
-            return Ledge(origin: minX, top: w.frame.maxY - 2, width: maxX - minX)
+            return Ledge(start: CGPoint(x: minX, y: w.frame.maxY - 2), vertical: false, length: maxX - minX - size.width)
         case .floor(let index):
             guard world.screens.indices.contains(index) else { return nil }
             let v = world.screens[index].visibleFrame
-            return Ledge(origin: v.minX, top: v.minY, width: v.width)
-        case .edge(let index):
+            return Ledge(start: CGPoint(x: v.minX, y: v.minY), vertical: false, length: v.width - size.width)
+        case .side(let index, let right):
             guard world.screens.indices.contains(index) else { return nil }
             let v = world.screens[index].visibleFrame
-            return Ledge(origin: v.maxX - Self.size.width * 0.55, top: v.minY + v.height * 0.45, width: Self.size.width)
+            let x = right ? v.maxX - size.width * 0.55 : v.minX - size.width * 0.45
+            return Ledge(start: CGPoint(x: x, y: v.minY + 40), vertical: true, length: v.height - size.height - 80)
         }
     }
 
-    private func desiredSpot(_ world: World) -> Spot? {
+    private func attentionSpot(_ world: World, screen index: Int) -> Spot {
+        let size = Self.size
+        let v = world.screens[index].visibleFrame
+        let c = CGPoint(x: min(max(world.cursor.x, v.minX), v.maxX), y: min(max(world.cursor.y, v.minY), v.maxY))
+        let along = c.y - v.minY - 40 - size.height / 2
+        let across = c.x - v.minX - size.width / 2
+        var options: [(Surface, CGFloat, CGFloat)] = [
+            (.side(index, right: false), c.x - v.minX, along),
+            (.side(index, right: true), v.maxX - c.x, along),
+            (.floor(index), c.y - v.minY, across),
+        ]
+        if let current = surface, let i = options.firstIndex(where: { $0.0 == current }) {
+            options[i].1 -= 220
+        }
+        let best = options.min(by: { $0.1 < $1.1 })!
+        return Spot(surface: best.0, offset: best.2, preferred: best.2, tolerance: 110)
+    }
+
+    private func exploreTarget(_ world: World) -> Spot {
+        let index = screenIndex(containing: position, world)
+        let v = world.screens[index].visibleFrame
+        let windows = world.windows.filter { perchable($0, world) && $0.id != { if case .window(let id) = surface { return id } else { return -1 } }() }
+        let roll = Double.random(in: 0...1)
+        if roll < 0.45, let w = windows.prefix(6).randomElement() {
+            let (minX, maxX, _) = span(w, world)
+            return Spot(surface: .window(w.id), offset: .random(in: 0...max(0, maxX - minX - Self.size.width)), preferred: 0)
+        }
+        if roll < 0.75 {
+            return Spot(surface: .floor(index), offset: .random(in: 0...max(0, v.width - Self.size.width)), preferred: 0)
+        }
+        return Spot(surface: .side(index, right: Bool.random()), offset: .random(in: 0...max(0, v.height - Self.size.height - 80)), preferred: 0)
+    }
+
+    private func desiredSpot(_ world: World, _ now: Date = Date()) -> Spot? {
         let size = Self.size
         let front = world.frontPID.flatMap { pid in world.windows.first(where: { $0.pid == pid }) }
         let cursorScreen = screenIndex(containing: world.cursor, world)
 
+        if mode != .rest || world.userIdle < exploreAfter { exploreSpot = nil }
+
         switch mode {
         case .sleep:
             let index = screenIndex(containing: position, world)
-            let width = world.screens[index].visibleFrame.width
-            let corner = width - size.width - 24
+            let corner = world.screens[index].visibleFrame.width - size.width - 24
             return Spot(surface: .floor(index), offset: corner, preferred: corner)
         case .alert:
             if let front, perchable(front, world) {
                 let (minX, maxX, _) = span(front, world)
                 if minX...maxX ~= world.cursor.x {
                     let near = world.cursor.x - minX - size.width / 2
-                    return Spot(surface: .window(front.id), offset: min(max(near, 0), maxX - minX - size.width), preferred: near)
+                    return Spot(surface: .window(front.id), offset: near, preferred: near)
                 }
             }
-            return Spot(surface: .edge(cursorScreen), offset: 0, preferred: 0)
+            return attentionSpot(world, screen: cursorScreen)
         default:
+            if world.userIdle >= exploreAfter {
+                if exploreSpot == nil || now >= nextExplore {
+                    exploreSpot = exploreTarget(world)
+                    nextExplore = now.addingTimeInterval(.random(in: 7...14))
+                }
+                return exploreSpot
+            }
             if let front, perchable(front, world) {
                 let (minX, maxX, _) = span(front, world)
                 return Spot(surface: .window(front.id), offset: nil, preferred: maxX - minX - size.width - 72)
             }
-            let index = front.map { screenIndex(containing: CGPoint(x: $0.frame.midX, y: $0.frame.midY), world) } ?? cursorScreen
-            return Spot(surface: .edge(index), offset: 0, preferred: 0)
+            return attentionSpot(world, screen: cursorScreen)
         }
     }
 
     private func jump(to spot: Spot, _ world: World) {
         guard let ledge = ledge(for: spot.surface, world) else { return }
-        let target = min(max(spot.offset ?? spot.preferred, 0), max(0, ledge.width - Self.size.width))
-        let to = CGPoint(x: ledge.origin + target, y: ledge.top)
+        let target = ledge.clamp(spot.offset ?? spot.preferred)
+        let to = ledge.point(target)
         let dist = hypot(to.x - position.x, to.y - position.y)
         if dist < 2 {
             surface = spot.surface
@@ -296,7 +348,7 @@ final class PetModel: ObservableObject {
             surface = nil
             return
         }
-        let end = CGPoint(x: ledge.origin + target, y: ledge.top)
+        let end = ledge.point(ledge.clamp(target))
         let t = min(1, now.timeIntervalSince(start) / duration)
         let e = CGFloat(t)
         position = CGPoint(x: from.x + (end.x - from.x) * e, y: from.y + (end.y - from.y) * e + apex * 4 * e * (1 - e))
@@ -342,7 +394,7 @@ final class PetModel: ObservableObject {
             perchable(w, world) && abs(position.y - (w.frame.maxY - 2)) < 30 && position.x > w.frame.minX - 10 && position.x + size.width < w.frame.maxX + 10
         }) {
             surface = .window(window.id)
-            offset = position.x - window.frame.minX
+            offset = position.x - span(window, world).minX
             return
         }
         let index = screenIndex(containing: CGPoint(x: position.x + size.width / 2, y: position.y), world)
