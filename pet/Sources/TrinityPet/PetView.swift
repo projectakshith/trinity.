@@ -229,7 +229,8 @@ struct PetScene: View {
                     .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95, anchor: layout.above ? .bottom : .top)), removal: .identity))
             }
             PixelHead(expression: model.expression, phase: model.phase, look: Int(model.look), badge: model.attention > 0)
-                .offset(y: -model.hop - (model.walking ? abs(sin(model.phase * 9)) * 2.5 : 0))
+                .offset(y: -model.hop - (sin(model.phase * 1.3) > 0.4 ? 1 : 0))
+                .opacity(model.opacity)
                 .padding(.leading, layout.creature.x)
                 .padding(.bottom, layout.creature.y)
         }

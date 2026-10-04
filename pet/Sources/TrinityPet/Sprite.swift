@@ -23,11 +23,17 @@ enum Sprite {
     static let rows = 26
     static let size = CGSize(width: CGFloat(columns) * pixel, height: CGFloat(rows) * pixel)
 
-    static let ink = Color(red: 0.05, green: 0.05, blue: 0.05)
-    static let paper = Color(red: 0.95, green: 0.95, blue: 0.93)
-    static let hairLit = Color(red: 0.0, green: 0.56, blue: 0.067)
-    static let hairShade = Color(red: 0.0, green: 0.33, blue: 0.05)
-    static let halo = Color.white.opacity(0.9)
+    static let ink = Color(red: 0.03, green: 0.07, blue: 0.05)
+    static let paper = Color(red: 0.6, green: 1.0, blue: 0.7)
+    static let halo = Color(red: 0.12, green: 0.85, blue: 0.36).opacity(0.4)
+    static let hair = Color(red: 0.04, green: 0.1, blue: 0.07)
+    static let rim = Color(red: 0.13, green: 0.62, blue: 0.3)
+    static let sheen = Color(red: 0.08, green: 0.26, blue: 0.15)
+    static let skin = Color(red: 0.47, green: 0.6, blue: 0.53)
+    static let skinShade = Color(red: 0.27, green: 0.38, blue: 0.32)
+    static let lens = Color(red: 0.04, green: 0.08, blue: 0.06)
+    static let frame = Color(red: 0.24, green: 0.95, blue: 0.45)
+    static let lip = Color(red: 0.52, green: 0.23, blue: 0.2)
     static let code = Color(red: 0.36, green: 1.0, blue: 0.45)
     static let ember = Color(red: 1.0, green: 0.42, blue: 0.24)
 
@@ -60,10 +66,19 @@ enum Sprite {
 
     private static let strand: [Pixel] = [(16, 4), (15, 4), (14, 5), (13, 5), (12, 6), (11, 6), (10, 7), (9, 7), (8, 8), (7, 8), (6, 9), (5, 9)].map { Pixel(x: $0.0, y: $0.1) }
 
-    static let hair: [Pixel] = cells("#")
-    static let face: [Pixel] = cells("o") + strand
+    static let hairCells: [Pixel] = cells("#")
+    static let faceCells: [Pixel] = cells("o")
+    static let strandCells: [Pixel] = strand
+    static let hairRim: [Pixel] = {
+        let filled = Set(cells("#") + cells("o"))
+        return cells("#").filter { p in !filled.contains(Pixel(x: p.x + 1, y: p.y)) || !filled.contains(Pixel(x: p.x, y: p.y - 1)) }
+    }()
+    static let shadowed: [Pixel] = {
+        let hair = Set(cells("#"))
+        return cells("o").filter { p in p.x <= 6 || hair.contains(Pixel(x: p.x, y: p.y - 1)) || hair.contains(Pixel(x: p.x, y: p.y - 2)) || hair.contains(Pixel(x: p.x - 1, y: p.y)) }
+    }()
     static let outline: [Pixel] = {
-        let filled = Set(hair + cells("o"))
+        let filled = Set(cells("#") + cells("o"))
         var ring = Set<Pixel>()
         for p in filled {
             for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
@@ -167,10 +182,16 @@ struct PixelHead: View {
                 ctx.fill(path, with: .color(color))
             }
             paint(Sprite.outline, Sprite.halo)
-            paint(Sprite.hair.filter { $0.y < 14 }, Sprite.hairLit)
-            paint(Sprite.hair.filter { $0.y >= 14 }, Sprite.hairShade)
-            paint(Sprite.face, Sprite.paper)
-            paint(layers.ink, Sprite.ink)
+            paint(Sprite.hairCells, Sprite.hair)
+            paint(Sprite.hairRim, Sprite.rim)
+            paint(Sprite.strandCells, Sprite.sheen)
+            paint(Sprite.faceCells, Sprite.skin)
+            paint(Sprite.shadowed, Sprite.skinShade)
+            let mouthless = expression == .neutral || expression == .thinking
+            paint(mouthless ? Sprite.run(20, 10, 12) : [], Sprite.lip)
+            paint(layers.ink.filter { $0.y >= 19 }, Sprite.lip)
+            paint(layers.ink.filter { $0.y < 19 && [3, 4, 10, 11, 12, 18, 19].contains($0.x) }, Sprite.frame)
+            paint(layers.ink.filter { $0.y < 19 && ![3, 4, 10, 11, 12, 18, 19].contains($0.x) }, Sprite.lens)
             paint(layers.paper, Sprite.paper)
             paint(layers.code, Sprite.code)
             paint(layers.ember, Sprite.ember)
