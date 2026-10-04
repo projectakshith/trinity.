@@ -19,7 +19,7 @@ final class PetHostingView: NSHostingView<PetScene> {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if controller?.handleMouseUp() != true { super.mouseUp(with: event) }
+        if controller?.handleMouseUp(event) != true { super.mouseUp(with: event) }
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -42,6 +42,11 @@ final class PetController: NSObject {
     private var grabOffset = CGPoint.zero
     private var dragDistance: CGFloat = 0
     private var pressing = false
+    private let sampler = ContextSampler()
+    private var trail: [(CGPoint, Date)] = []
+    private var reversals: [Date] = []
+    private var lastDX: CGFloat = 0
+    private var pendingClick: DispatchWorkItem?
     private var activity: NSObjectProtocol?
 
     override init() {
@@ -101,7 +106,8 @@ final class PetController: NSObject {
             cursor: NSEvent.mouseLocation,
             userIdle: idle,
             keyIdle: keyIdle,
-            frontPID: NSWorkspace.shared.frontmostApplication?.processIdentifier
+            frontPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            context: sampler.sample(userIdle: idle)
         )
     }
 
@@ -168,6 +174,9 @@ final class PetController: NSObject {
         pressing = true
         dragDistance = 0
         grabOffset = CGPoint(x: point.x - model.position.x, y: point.y - model.position.y)
+        trail = [(point, Date())]
+        reversals = []
+        lastDX = 0
         return true
     }
 
@@ -175,6 +184,13 @@ final class PetController: NSObject {
         guard pressing else { return false }
         let point = NSEvent.mouseLocation
         dragDistance += abs(event.deltaX) + abs(event.deltaY)
+        let now = Date()
+        trail = (trail + [(point, now)]).filter { now.timeIntervalSince($0.1) < 0.12 }
+        if abs(event.deltaX) > 4 {
+            if lastDX != 0 && (event.deltaX > 0) != (lastDX > 0) { reversals.append(now) }
+            lastDX = event.deltaX
+        }
+        reversals = reversals.filter { now.timeIntervalSince($0) < 1.2 }
         if dragDistance > 4 && model.mode != .held { model.grab() }
         if model.mode == .held {
             model.position = CGPoint(x: point.x - grabOffset.x, y: point.y - grabOffset.y)
@@ -182,16 +198,34 @@ final class PetController: NSObject {
         return true
     }
 
-    func handleMouseUp() -> Bool {
+    func handleMouseUp(_ event: NSEvent) -> Bool {
         guard pressing else { return false }
         pressing = false
         if model.mode == .held {
             windowsAt = .distantPast
-            model.drop(world: world())
-        } else {
-            model.click()
-            if model.digest == nil { model.refresh() }
+            var velocity = CGVector.zero
+            if let first = trail.first, let last = trail.last, last.1.timeIntervalSince(first.1) > 0.01 {
+                let dt = CGFloat(last.1.timeIntervalSince(first.1))
+                velocity = CGVector(dx: (last.0.x - first.0.x) / dt, dy: (last.0.y - first.0.y) / dt)
+            }
+            model.drop(world: world(), velocity: velocity, shaken: reversals.count >= 5)
+            return true
         }
+        if event.clickCount >= 2 {
+            pendingClick?.cancel()
+            pendingClick = nil
+            model.trick()
+            return true
+        }
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.model.click()
+                if self.model.digest == nil { self.model.refresh() }
+            }
+        }
+        pendingClick = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: work)
         return true
     }
 

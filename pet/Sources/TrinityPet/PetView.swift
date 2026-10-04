@@ -306,8 +306,8 @@ struct PetScene: View {
                         removal: .opacity.animation(.easeOut(duration: 0.14))
                     ))
             }
-            PixelHead(expression: model.expression, phase: model.phase, look: model.look, badge: model.attention > 0)
-                .offset(x: (model.lookX * 1.5).rounded(), y: -model.hop - (sin(model.phase * 1.3) > 0.4 ? 1 : 0) - (model.lookY * 1.5).rounded() - (model.walking ? (sin(model.phase * 8) > 0 ? 1 : 0) : 0))
+            PixelHead(expression: model.expression, phase: model.phase, look: model.look, badge: model.attention > 0, bit: model.bit, bitProgress: model.bitProgress, attire: model.attire)
+                .offset(x: (model.lookX * 1.5).rounded(), y: -model.hop - (sin(model.phase * 1.3) > 0.4 ? 1 : 0) - (model.lookY * 1.5).rounded() - (model.walking ? (sin(model.phase * 8) > 0 ? 1 : 0) : 0) - model.beat * 1.5)
                 .opacity(model.opacity)
                 .padding(.leading, layout.creature.x)
                 .padding(.bottom, layout.creature.y)

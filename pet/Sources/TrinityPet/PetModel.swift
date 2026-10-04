@@ -21,6 +21,7 @@ struct World {
     var userIdle: TimeInterval
     var keyIdle: TimeInterval
     var frontPID: pid_t?
+    var context: Context
 }
 
 enum Surface: Equatable {
@@ -48,12 +49,16 @@ private enum Motion {
     case still
     case walk(to: CGFloat)
     case glide(from: CGPoint, to: Surface, offset: CGFloat, start: Date, duration: Double)
+    case flight(CGVector)
 }
 
 private enum Quips {
     static let poked = ["Stop poking me.", "Seriously?", "Hands off.", "One more and I'm muting you.", "Tch."]
     static let crowded = ["Personal space.", "Can I help you?", "You're hovering.", "Back off a little."]
     static let dropped = ["Fine. I'll sit here.", "Rude.", "Don't do that again.", "Whatever. Here then."]
+    static let thrown = ["Rude.", "Nice throw. Idiot.", "I will remember this.", "Ow. Dramatically."]
+    static let shaken = ["I hate you.", "Everything's spinning. Thanks.", "Never. Again."]
+    static let trick = ["Watch this.", "Obviously.", "You're welcome.", "Free show. Once."]
     static let quiet = ["Nothing for you. Go build something.", "All quiet. Don't make it weird.", "I'm busy. You're fine.", "What do you want?"]
 }
 
@@ -77,6 +82,11 @@ final class PetModel: ObservableObject {
     @Published var error: String?
     @Published var refreshing = false
     @Published var hidden = false
+    @Published var bit: Bit?
+    @Published var bitProgress: Double = 0
+    @Published var attire = Attire()
+    @Published var beat: CGFloat = 0
+    @Published var flying = false
 
     var position = CGPoint(x: 400, y: 0)
     private var surface: Surface?
@@ -105,6 +115,15 @@ final class PetModel: ObservableObject {
     private static let remindedKey = "remindedUpcoming"
     private static let askedKey = "askedUpcoming"
     private var questionUntil = Date.distantPast
+    private var bitStart = Date()
+    private var nextBit = Date().addingTimeInterval(.random(in: 8...20))
+    private var nextLine = Date().addingTimeInterval(.random(in: 300...600))
+    private var recentLines: [String] = []
+    private var grump = 0
+    private var grumpDecay = Date().addingTimeInterval(1800)
+    private var lastBlush = Date.distantPast
+    private var toastOpened = false
+    private var context = Context()
 
     init() {
         seen = Set(UserDefaults.standard.stringArray(forKey: Self.seenKey) ?? [])
@@ -132,7 +151,7 @@ final class PetModel: ObservableObject {
     }
 
     var expression: Expression {
-        if mode == .held { return .flustered }
+        if mode == .held || flying { return .flustered }
         if mode == .sleep { return .asleep }
         if error != nil && digest == nil { return .glitch }
         if toast != nil || greeting != nil || mode == .alert { return .alert }
@@ -141,14 +160,21 @@ final class PetModel: ObservableObject {
         if bubbleOpen || quip != nil || question != nil { return .talking }
         if attention > 0 { return .focused }
         if let digest, digest.insights.isEmpty, digest.sources.contains(where: \.ok) { return .chill }
-        return .neutral
+        return grump >= 2 ? .annoyed : .neutral
     }
 
     func tick(dt: Double, world: World) {
         let now = Date()
         phase += dt
+        context = world.context
         updateTimers(now)
+        updateLife(now, world)
         if mode == .held { return }
+
+        if case .flight(let v) = motion {
+            fly(v, dt, world)
+            return
+        }
 
         if mode != .alert && !bubbleOpen {
             if world.userIdle > sleepAfter && mode != .sleep { mode = .sleep }
@@ -219,7 +245,12 @@ final class PetModel: ObservableObject {
 
         if mode == .rest && !bubbleOpen && dist < 95 {
             if hoverSince == nil { hoverSince = now }
-            if now.timeIntervalSince(hoverSince!) > 1.2 {
+            let hovered = now.timeIntervalSince(hoverSince!)
+            if hovered > 0.8 && hovered < 2.6 && bit == nil && now.timeIntervalSince(lastBlush) > 600 {
+                lastBlush = now
+                play(.blush, now)
+            }
+            if hovered > 2.6 {
                 annoyedUntil = now.addingTimeInterval(1.5)
                 tx = -tx
                 ty = 0
@@ -251,6 +282,7 @@ final class PetModel: ObservableObject {
             if let next = pendingToast { pendingToast = nil; show(next) } else { mode = .rest }
         }
         if toast != nil && now >= toastUntil {
+            if toast?.priority == 1 && !toastOpened { grump = min(3, grump + 1) }
             toast = nil
             if mode == .alert { mode = .rest }
         }
@@ -263,6 +295,111 @@ final class PetModel: ObservableObject {
         } else if hop != 0 {
             hop = 0
         }
+    }
+
+    private func updateLife(_ now: Date, _ world: World) {
+        let next = Attire(hood: context.evening, headphones: context.audio, dim: context.lateNight)
+        if attire != next { attire = next }
+        let pulse: CGFloat = context.audio && mode == .rest && bubbleKind == nil ? (sin(phase * 2 * .pi * 1.9) > 0.3 ? 1 : 0) : 0
+        if beat != pulse { beat = pulse }
+
+        if now >= grumpDecay {
+            grumpDecay = now.addingTimeInterval(1800)
+            grump = max(0, grump - 1)
+        }
+
+        if let current = bit {
+            bitProgress = now.timeIntervalSince(bitStart) / current.duration
+            if bitProgress >= 1 { bit = nil; bitProgress = 0 }
+        }
+
+        let calm = mode == .rest && bubbleKind == nil && !flying && { if case .still = motion { return true } else { return false } }()
+        if bit == nil && calm && now >= nextBit {
+            nextBit = now.addingTimeInterval(.random(in: 18...45))
+            play(pickBit(world), now)
+        }
+        if calm && now >= nextLine && world.keyIdle > 5 {
+            nextLine = now.addingTimeInterval(.random(in: 1200...2400))
+            let options = Lines.ambient(context: context, digest: digest, grump: grump).filter { !recentLines.contains($0) }
+            if let line = options.randomElement() {
+                recentLines = Array((recentLines + [line]).suffix(8))
+                say(line, for: 3.5)
+            }
+        }
+    }
+
+    private func pickBit(_ world: World) -> Bit {
+        var pool: [(Bit, Double)] = [
+            (.pushShades, 3), (.hairFlick, 3), (.lookAround, 3), (.codeFlicker, 2), (.phone, 1.5),
+            (.eyeRoll, grump >= 1 ? 3 : 1.5), (.yawn, context.lateNight ? 4 : 0.8), (.coffee, context.morning ? 4 : 0.6),
+        ]
+        if context.app == .coding && world.keyIdle < 10 { pool.append((.typing, 7)) }
+        if context.app == .video { pool.append((.popcorn, 7)) }
+        if context.app == .chat { pool.append((.phone, 5)) }
+        if context.lowBattery { pool.append((.tired, 6)) }
+        let total = pool.reduce(0) { $0 + $1.1 }
+        var roll = Double.random(in: 0..<total)
+        for (bit, weight) in pool {
+            roll -= weight
+            if roll < 0 { return bit }
+        }
+        return .lookAround
+    }
+
+    private func play(_ next: Bit, _ now: Date) {
+        bit = next
+        bitStart = now
+        bitProgress = 0
+    }
+
+    func trick() {
+        guard mode != .held else { return }
+        play(.pose, Date())
+        say(Quips.trick.randomElement()!, for: 2)
+    }
+
+    private func fly(_ velocity: CGVector, _ dt: Double, _ world: World) {
+        var v = velocity
+        let size = Self.size
+        let index = screenIndex(containing: CGPoint(x: position.x + size.width / 2, y: position.y + size.height / 2), world)
+        let frame = world.screens[index].visibleFrame
+        let old = position
+        v.dy -= 2000 * CGFloat(dt)
+        position.x += v.dx * CGFloat(dt)
+        position.y += v.dy * CGFloat(dt)
+        if position.x < frame.minX { position.x = frame.minX; v.dx = -v.dx * 0.55 }
+        if position.x > frame.maxX - size.width { position.x = frame.maxX - size.width; v.dx = -v.dx * 0.55 }
+        if position.y > frame.maxY - size.height { position.y = frame.maxY - size.height; v.dy = -v.dy * 0.4 }
+
+        if v.dy < 0, let w = world.windows.first(where: { w in
+            perchable(w, world) && old.y >= w.frame.maxY - 2 && position.y < w.frame.maxY - 2
+                && position.x + size.width / 2 > w.frame.minX && position.x + size.width / 2 < w.frame.maxX
+        }), abs(v.dy) < 700 {
+            position.y = w.frame.maxY - 2
+            land(world)
+            return
+        }
+        if position.y <= frame.minY {
+            position.y = frame.minY
+            if abs(v.dy) > 320 {
+                v.dy = -v.dy * 0.38
+                v.dx *= 0.75
+            } else {
+                land(world)
+                return
+            }
+        }
+        motion = .flight(v)
+    }
+
+    private func land(_ world: World) {
+        motion = .still
+        flying = false
+        settle(at: position, world)
+        UserDefaults.standard.set([Double(position.x), Double(position.y)], forKey: Self.homeKey)
+        placedUntil = Date().addingTimeInterval(600)
+        annoyedUntil = Date().addingTimeInterval(2.5)
+        say(Quips.thrown.randomElement()!, for: 2.2)
     }
 
     private func say(_ line: String, for seconds: TimeInterval) {
@@ -450,6 +587,8 @@ final class PetModel: ObservableObject {
         pendingToast = nil
         bubbleOpen.toggle()
         if bubbleOpen {
+            grump = max(0, grump - 1)
+            bit = nil
             markAllSeen()
             if mode == .sleep || mode == .alert { mode = .rest }
             motion = .still
@@ -467,11 +606,27 @@ final class PetModel: ObservableObject {
         walking = false
         relocateStart = nil
         opacity = 1
+        flying = false
+        bit = nil
         mode = .held
     }
 
-    func drop(world: World) {
+    func drop(world: World, velocity: CGVector = .zero, shaken: Bool = false) {
         mode = .rest
+        if shaken {
+            play(.dizzy, Date())
+            annoyedUntil = Date().addingTimeInterval(4)
+        }
+        if hypot(velocity.dx, velocity.dy) > 650 {
+            flying = true
+            motion = .flight(CGVector(dx: max(-2400, min(2400, velocity.dx)), dy: max(-2400, min(2400, velocity.dy))))
+            return
+        }
+        if shaken {
+            settle(at: position, world)
+            say(Quips.shaken.randomElement()!, for: 2.4)
+            return
+        }
         settle(at: position, world)
         UserDefaults.standard.set([Double(position.x), Double(position.y)], forKey: Self.homeKey)
         placedUntil = Date().addingTimeInterval(600)
@@ -531,6 +686,7 @@ final class PetModel: ObservableObject {
     func answer(remind: Bool) {
         guard let item = question else { return }
         question = nil
+        grump = max(0, grump - 1)
         say(remind ? ["Noted. I'll remind you.", "Fine. I'll nag you.", "Got it."].randomElement()! : ["Forgotten.", "Whatever you say.", "Gone."].randomElement()!, for: 2)
         Task {
             if let next = try? await Daemon.setUpcoming(item.id, status: remind ? "remind" : "skip") { digest = next }
@@ -564,6 +720,7 @@ final class PetModel: ObservableObject {
     private func show(_ insight: Insight) {
         quip = nil
         toast = insight
+        toastOpened = false
         toastUntil = Date().addingTimeInterval(insight.priority == 1 ? 14 : 8)
         toastStart = Date()
         if mode != .held { mode = .alert }
