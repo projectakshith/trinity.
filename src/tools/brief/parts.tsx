@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useCallback } from 'react';
 import { timeAgo } from '@/lib/format';
 import { glyphs } from '@/ui/glyphs';
 import { Icon } from '@/ui/Icon';
@@ -33,17 +34,39 @@ export function whenLabel(u: Upcoming, now = new Date()): string {
   return u.when.length > 10 ? `${dayText} · ${date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}` : dayText;
 }
 
+function UpcomingRow({ item }: { item: Upcoming }) {
+  const { decide } = useBrief();
+  const remind = useCallback(() => decide(item.id, 'remind'), [decide, item.id]);
+  const skip = useCallback(() => decide(item.id, 'skip'), [decide, item.id]);
+  const reminding = item.status === 'remind';
+  return (
+    <div className="upcoming-row">
+      <span className={`upcoming-when${reminding ? '' : ' pending'}`}>{whenLabel(item)}</span>
+      <span className="upcoming-what">
+        {item.what}
+        {item.who ? <span className="upcoming-who"> · {item.who}</span> : null}
+      </span>
+      {reminding ? (
+        <span className="upcoming-state">{glyphs.bullet} Reminding</span>
+      ) : (
+        <span className="upcoming-actions">
+          <button type="button" className="mini-btn primary" onClick={remind}>
+            Remind
+          </button>
+          <button type="button" className="mini-btn" onClick={skip}>
+            Skip
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function UpcomingList({ items }: { items: Upcoming[] }) {
   return (
     <div className="upcoming-list">
       {items.map((u) => (
-        <div key={u.id} className="upcoming-row">
-          <span className="upcoming-when">{whenLabel(u)}</span>
-          <span className="upcoming-what">
-            {u.what}
-            {u.who ? <span className="upcoming-who"> · {u.who}</span> : null}
-          </span>
-        </div>
+        <UpcomingRow key={u.id} item={u} />
       ))}
     </div>
   );

@@ -29,6 +29,7 @@ export interface Upcoming {
   who?: string;
   chat?: string;
   source: string;
+  status?: 'pending' | 'remind' | 'skip';
 }
 
 export interface Digest {
@@ -46,6 +47,7 @@ interface BriefState {
   refreshing: boolean;
   reachable: boolean;
   refresh: () => void;
+  decide: (id: string, status: 'remind' | 'skip') => void;
 }
 
 const POLL_MS = 60_000;
@@ -71,9 +73,9 @@ export function BriefProvider({ children }: { children: ReactNode }) {
   const [refreshing, setRefreshing] = useState(false);
   const [reachable, setReachable] = useState(true);
 
-  const load = useCallback(async (path: string, method: 'GET' | 'POST') => {
+  const load = useCallback(async (path: string, method: 'GET' | 'POST', payload?: unknown) => {
     try {
-      const res = await fetch(daemonUrl(path), { method });
+      const res = await fetch(daemonUrl(path), payload ? { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) } : { method });
       const body = (await res.json()) as { digest: Digest | null; error: string | null };
       setReachable(true);
       if (body.digest) setDigest(body.digest);
@@ -95,6 +97,8 @@ export function BriefProvider({ children }: { children: ReactNode }) {
     void load('/refresh?force=1', 'POST').finally(() => setRefreshing(false));
   }, [load]);
 
-  const value = useMemo(() => ({ digest, error, refreshing, reachable, refresh }), [digest, error, refreshing, reachable, refresh]);
+  const decide = useCallback((id: string, status: 'remind' | 'skip') => void load(`/upcoming/${id}`, 'POST', { status }), [load]);
+
+  const value = useMemo(() => ({ digest, error, refreshing, reachable, refresh, decide }), [digest, error, refreshing, reachable, refresh, decide]);
   return <BriefContext.Provider value={value}>{children}</BriefContext.Provider>;
 }
