@@ -1,4 +1,4 @@
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { HOME, readJson, writeJson, type Config } from './config';
@@ -8,7 +8,7 @@ import { readWhatsApp } from './sources/whatsapp';
 import type { Digest, Insight, SourceItem, SourceResult } from './types';
 
 const DIGEST_FILE = 'digest.json';
-const MAX_INPUT_CHARS = 16_000;
+const MAX_INPUT_CHARS = 9_000;
 const MAX_INSIGHTS = 8;
 
 const SYSTEM = `You are Trinity, the owner's personal assistant, with attitude. You read a compact dump of the owner's recent mail, WhatsApp chats and calendar, and decide what actually matters.
@@ -93,6 +93,11 @@ export async function buildDigest(config: Config, force = false): Promise<Digest
     return next;
   }
 
+  if (cached && tokensToday() >= config.dailyTokenBudget) {
+    const next = { ...cached, sources };
+    writeJson(DIGEST_FILE, next);
+    throw new Error(`Daily token budget reached (${config.dailyTokenBudget.toLocaleString()}); showing the last digest`);
+  }
   const digest = await summarize(config, results, hash);
   writeJson(DIGEST_FILE, digest);
   if (digest.usage) appendFileSync(join(HOME, 'usage.jsonl'), `${JSON.stringify({ at: digest.generatedAt, feature: 'digest', ...digest.usage })}\n`, { mode: 0o600 });
@@ -112,6 +117,21 @@ export async function summarize(config: Config, results: SourceResult[], hash: s
     hash,
     ...parse(completion.text, items),
     sources,
-    usage: { model: config.model, tokensIn: completion.tokensIn, tokensOut: completion.tokensOut },
+    usage: { model: completion.model, tokensIn: completion.tokensIn, tokensOut: completion.tokensOut },
   };
+}
+
+function tokensToday(): number {
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  try {
+    return readFileSync(join(HOME, 'usage.jsonl'), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { at: number; tokensIn?: number; tokensOut?: number })
+      .filter((u) => u.at >= midnight.getTime())
+      .reduce((n, u) => n + (u.tokensIn ?? 0) + (u.tokensOut ?? 0), 0);
+  } catch {
+    return 0;
+  }
 }

@@ -119,7 +119,7 @@ Bun.serve({
   },
 });
 
-console.log(`[trinityd] listening on http://${HOST}:${PORT} · model ${config.model}`);
+console.log(`[trinityd] listening on http://${HOST}:${PORT} · ${config.provider === 'groq' ? `groq ${config.groq?.model}` : `neo ${config.model}`}`);
 if (config.google && !googleLinked()) console.log(`[trinityd] link Google: open http://${HOST}:${PORT}/auth/google`);
 void refresh().catch(() => undefined);
 setInterval(() => void refresh().catch(() => undefined), config.refreshMinutes * 60_000);

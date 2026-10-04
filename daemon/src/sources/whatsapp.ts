@@ -6,8 +6,8 @@ const APPLE_EPOCH = 978_307_200;
 const WINDOW_HOURS = 24;
 const UNREAD_WINDOW_HOURS = 72;
 const MAX_CHATS = 25;
-const MAX_MESSAGES = 12;
-const MAX_CHARS = 240;
+const MAX_MESSAGES = 8;
+const MAX_CHARS = 180;
 
 interface ChatRow {
   pk: number;
@@ -90,6 +90,7 @@ export function readWhatsApp(path: string): SourceResult {
       if (rows.length === 0) continue;
       const name = chat.name ?? chat.jid ?? 'Unknown chat';
       const group = chat.type === 1 || (chat.jid ?? '').endsWith('@g.us');
+      if (group && (chat.unread ?? 0) === 0) continue;
       const lines = rows.map((r) => `${clock(r.date)} ${r.mine ? 'me' : group ? (r.sender ?? 'someone') : name}: ${clip(r.text)}`);
       items.push({
         source: 'whatsapp',

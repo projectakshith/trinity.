@@ -8,18 +8,23 @@ export const PORT = Number(process.env.TRINITY_PORT ?? 7979);
 export const HOST = '127.0.0.1';
 
 export interface Config {
+  provider: 'groq' | 'neo';
   model: string;
   neoUrl: string;
+  groq?: { apiKey: string; model: string };
   refreshMinutes: number;
+  dailyTokenBudget: number;
   ownerName: string;
   google?: { clientId: string; clientSecret: string };
   whatsappDb: string;
 }
 
 const DEFAULTS: Config = {
+  provider: 'neo',
   model: 'gemini-3.8-flash-high',
   neoUrl: 'http://127.0.0.1:8787',
-  refreshMinutes: 15,
+  refreshMinutes: 30,
+  dailyTokenBudget: 120_000,
   ownerName: 'Akshith',
   whatsappDb: join(homedir(), 'Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite'),
 };
@@ -51,6 +56,8 @@ export function loadConfig(): Config {
     ...user,
     model: process.env.TRINITY_MODEL ?? user.model ?? DEFAULTS.model,
     google: user.google?.clientId && user.google.clientSecret ? user.google : undefined,
+    groq: user.groq?.apiKey ? { apiKey: user.groq.apiKey, model: user.groq.model || 'openai/gpt-oss-20b' } : undefined,
+    provider: user.provider === 'groq' && user.groq?.apiKey ? 'groq' : 'neo',
   };
 }
 
