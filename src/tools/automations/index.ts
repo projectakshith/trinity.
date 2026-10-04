@@ -7,6 +7,6 @@ export const automations: Tool = {
   description: 'Routines that run on their own',
   icon: 'bolt',
   href: '/automations/',
-  NavBadge: SoonBadge,
+  Badge: SoonBadge,
   Status: SoonStatus,
 };

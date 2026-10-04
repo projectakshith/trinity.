@@ -30,3 +30,24 @@ export function bucketOf(ts: number, now = Date.now()): SessionBucket {
   if (ts >= t - 6 * 86_400_000) return 'This week';
   return 'Earlier';
 }
+
+export function timeAgo(ts: number, now = Date.now()): string {
+  const s = Math.max(0, Math.round((now - ts) / 1000));
+  if (s < 45) return 'just now';
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+export function projectName(cwd: string): string {
+  const parts = cwd.split(/[\\/]/u).filter(Boolean);
+  return parts[parts.length - 1] ?? cwd;
+}
+
+export function todayLabel(now = new Date()): string {
+  return now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+}

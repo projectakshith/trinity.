@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Instrument_Serif, Inter } from 'next/font/google';
+import { Instrument_Serif, Afacad } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { THEME_BOOT_SCRIPT } from '@/lib/themeScript';
 import { AppShell } from '@/shell/AppShell';
@@ -10,7 +10,7 @@ import '@/home/home.css';
 import '@/tools/morpheus/morpheus.css';
 
 const serif = Instrument_Serif({ weight: '400', style: ['normal', 'italic'], subsets: ['latin'], variable: '--font-serif' });
-const sans = Inter({ subsets: ['latin'], variable: '--font-sans' });
+const sans = Afacad({ subsets: ['latin'], variable: '--font-sans' });
 
 export const metadata: Metadata = {
   title: 'Trinity',
@@ -23,8 +23,8 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
   interactiveWidget: 'resizes-content',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#fbfaf8' },
-    { media: '(prefers-color-scheme: dark)', color: '#191918' },
+    { media: '(prefers-color-scheme: light)', color: '#faf9f6' },
+    { media: '(prefers-color-scheme: dark)', color: '#161615' },
   ],
 };
 

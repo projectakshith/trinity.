@@ -1,6 +1,6 @@
 import { useCallback, useState, type ChangeEvent, type FormEvent } from 'react';
 import { MorpheusClient } from 'morpheus/client';
-import { Icon } from '@/ui/Icon';
+import { glyphs } from '@/ui/glyphs';
 import { defaultDaemonUrl, type DaemonLink } from './link';
 
 export function ConnectMorpheus({ initial, onConnect }: { initial: DaemonLink | null; onConnect: (link: DaemonLink) => void }) {
@@ -40,29 +40,35 @@ export function ConnectMorpheus({ initial, onConnect }: { initial: DaemonLink | 
   );
 
   return (
-    <div className="center-page">
+    <div className="center-page connect-page">
       <form className="connect-card" onSubmit={submit}>
-        <div className="tool-icon">
-          <Icon name="code" size={20} />
+        <span className="connect-hero">{glyphs.bulletOpen}</span>
+        <p className="eyebrow">Morpheus</p>
+        <h1 className="serif-title">Connect your laptop</h1>
+        <p className="lede">Morpheus is your coding agent. It runs on your laptop, and Trinity drives it from anywhere.</p>
+        <ol className="connect-steps">
+          <li>
+            Run <code>morpheus serve</code> on your laptop.
+          </li>
+          <li>Paste the address and token it prints.</li>
+          <li>
+            From your phone, start it with <code>--host 0.0.0.0</code> or your Tailscale IP.
+          </li>
+        </ol>
+        <div className="connect-fields">
+          <label className="field">
+            <span>Address</span>
+            <input value={url} onChange={onUrl} placeholder="ws://100.x.y.z:7878" spellCheck={false} autoCapitalize="off" inputMode="url" />
+          </label>
+          <label className="field">
+            <span>Token</span>
+            <input value={token} onChange={onToken} placeholder="Paste from morpheus serve" type="password" autoComplete="off" />
+          </label>
+          {error ? <p className="form-error">{glyphs.error} {error}</p> : null}
+          <button type="submit" className="primary-btn" disabled={busy || !url.trim() || !token.trim()}>
+            {busy ? 'Connecting…' : 'Connect'}
+          </button>
         </div>
-        <h1 className="serif-title">Connect Morpheus</h1>
-        <p className="lede">Morpheus is your coding agent. It runs on your laptop; Trinity talks to it from anywhere.</p>
-        <label className="field">
-          <span>Address</span>
-          <input value={url} onChange={onUrl} placeholder="ws://100.x.y.z:7878" spellCheck={false} autoCapitalize="off" inputMode="url" />
-        </label>
-        <label className="field">
-          <span>Token</span>
-          <input value={token} onChange={onToken} placeholder="Paste from morpheus serve" type="password" autoComplete="off" />
-        </label>
-        {error ? <p className="form-error">{error}</p> : null}
-        <button type="submit" className="primary-btn" disabled={busy || !url.trim() || !token.trim()}>
-          {busy ? 'Connecting…' : 'Connect'}
-        </button>
-        <p className="help">
-          On your laptop run <code>morpheus serve</code>. It prints the address and token. To connect from your phone, add <code>--host 0.0.0.0</code> or
-          your Tailscale IP.
-        </p>
       </form>
     </div>
   );

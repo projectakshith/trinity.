@@ -1,90 +1,124 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
-import { bucketOf, type SessionBucket } from '@/lib/format';
+import type { SessionListItem } from 'morpheus/client';
+import { projectName, timeAgo } from '@/lib/format';
 import { glyphs } from '@/ui/glyphs';
 import { Icon } from '@/ui/Icon';
-import type { Ask } from '../types';
+import type { Ask, PaletteItem } from '../types';
 import { MORPHEUS_HREF, sessionHref, useMorpheus } from './state';
 
-const BUCKETS: SessionBucket[] = ['Today', 'Yesterday', 'This week', 'Earlier'];
-const HOME_RECENTS = 3;
+const HOME_RECENTS = 5;
 
-export function NavDot() {
-  const { link, connection } = useMorpheus();
-  const [glyph, tone] = !link
-    ? [glyphs.bulletOpen, 'off']
-    : connection === 'open'
-      ? [glyphs.bullet, 'on']
-      : connection === 'unauthorized'
-        ? [glyphs.error, 'bad']
-        : [glyphs.running, 'wait'];
+export function sessionGlyph(status: SessionListItem['status']): [glyph: string, tone: string] {
+  if (status === 'running') return [glyphs.running, 'on'];
+  if (status === 'error') return [glyphs.error, 'bad'];
+  return [glyphs.bulletOpen, ''];
+}
+
+function useLinkState(): { glyph: string; tone: string; text: string } {
+  const { link, connection, sessions } = useMorpheus();
+  const running = sessions.filter((s) => s.status === 'running').length;
+  if (!link) return { glyph: glyphs.bulletOpen, tone: 'off', text: 'Not connected' };
+  if (connection === 'unauthorized') return { glyph: glyphs.error, tone: 'bad', text: 'Token rejected' };
+  if (connection !== 'open') return { glyph: glyphs.running, tone: 'wait', text: 'Reconnecting…' };
+  if (running > 0) return { glyph: glyphs.running, tone: 'on', text: `${running} running` };
+  return { glyph: glyphs.bullet, tone: 'on', text: 'Connected' };
+}
+
+export function NavGlyph() {
+  const { glyph, tone } = useLinkState();
   return <span className={`status-glyph ${tone}`}>{glyph}</span>;
 }
 
 export function CardStatus() {
-  const { link, connection, sessions } = useMorpheus();
-  const running = sessions.filter((s) => s.status === 'running').length;
-  let text = 'Connected';
-  if (!link) text = 'Not connected';
-  else if (connection === 'unauthorized') text = 'Token rejected';
-  else if (connection !== 'open') text = 'Reconnecting…';
-  else if (running > 0) text = `Connected · ${running} running`;
-  return <span className={`tool-status${link && connection === 'open' ? ' on' : ''}`}>{text}</span>;
-}
-
-export function SidebarRecents() {
-  const { sessions } = useMorpheus();
-  const pathname = usePathname();
-  const active = useSearchParams().get('s');
-  const onMorpheus = pathname.startsWith(MORPHEUS_HREF.replace(/\/$/u, ''));
-
-  const groups = useMemo(() => {
-    const now = Date.now();
-    const map = new Map<SessionBucket, typeof sessions>();
-    for (const s of sessions) {
-      const bucket = bucketOf(s.updatedAt, now);
-      map.set(bucket, [...(map.get(bucket) ?? []), s]);
-    }
-    return BUCKETS.filter((b) => map.has(b)).map((b) => [b, map.get(b) ?? []] as const);
-  }, [sessions]);
-
+  const { glyph, tone, text } = useLinkState();
   return (
-    <div className="recents">
-      {groups.map(([bucket, items]) => (
-        <section key={bucket}>
-          <h3>{bucket}</h3>
-          {items.map((s) => (
-            <Link key={s.id} href={sessionHref(s.id)} className={`recent${onMorpheus && s.id === active ? ' active' : ''}`}>
-              <span className="recent-title">{s.title}</span>
-              {s.status === 'running' ? <span className="running-glyph">{glyphs.running}</span> : null}
-            </Link>
-          ))}
-        </section>
-      ))}
-    </div>
+    <span className={`tool-status${tone === 'on' ? ' on' : ''}`}>
+      <span className={`glyph ${tone}`}>{glyph}</span>
+      {text}
+    </span>
   );
 }
 
-export function HomeRecents() {
-  const { sessions } = useMorpheus();
-  const recent = sessions.slice(0, HOME_RECENTS);
-  if (recent.length === 0) return null;
+function SessionRow({ session, now }: { session: SessionListItem; now: number }) {
+  const [glyph, tone] = sessionGlyph(session.status);
+  const running = session.status === 'running';
   return (
-    <section className="home-section">
-      <h2>Pick up where you left off</h2>
-      <div className="recent-list">
-        {recent.map((s) => (
-          <Link key={s.id} href={sessionHref(s.id)} className="recent-row">
-            <span className="recent-row-title">{s.title}</span>
-            <span className="faint">{s.status === 'running' ? 'Running' : `${s.turnCount} ${s.turnCount === 1 ? 'turn' : 'turns'}`}</span>
-            <Icon name="chevronRight" size={15} className="faint" />
-          </Link>
-        ))}
-      </div>
-    </section>
+    <Link href={sessionHref(session.id)} className={`work-row${running ? ' is-running' : ''}`}>
+      <span className={`glyph work-glyph ${tone}`}>{glyph}</span>
+      <span className="work-text">
+        <span className={`work-title${running ? ' shimmer' : ''}`}>{session.title}</span>
+        <span className="work-meta">
+          <span className="work-project">{projectName(session.cwd)}</span>
+          <span>·</span>
+          <span>{running ? 'working now' : timeAgo(session.updatedAt, now)}</span>
+          {session.turnCount ? (
+            <>
+              <span>·</span>
+              <span>
+                {session.turnCount} {session.turnCount === 1 ? 'turn' : 'turns'}
+              </span>
+            </>
+          ) : null}
+        </span>
+      </span>
+      <Icon name="arrowRight" size={14} className="work-go" />
+    </Link>
+  );
+}
+
+export function HomeWork() {
+  const { link, connection, sessions } = useMorpheus();
+  const now = Date.now();
+  const running = sessions.filter((s) => s.status === 'running');
+  const recent = sessions.filter((s) => s.status !== 'running').slice(0, HOME_RECENTS);
+
+  if (!link) {
+    return (
+      <section className="home-section">
+        <h2 className="eyebrow">Get started</h2>
+        <Link href={MORPHEUS_HREF} className="connect-banner">
+          <span className="connect-mark">{glyphs.bulletOpen}</span>
+          <span className="connect-text">
+            <span className="connect-title">Connect Morpheus</span>
+            <span className="connect-sub">Pair the coding agent on your laptop to start delegating work.</span>
+          </span>
+          <Icon name="arrowRight" size={16} />
+        </Link>
+      </section>
+    );
+  }
+
+  return (
+    <>
+      {running.length > 0 ? (
+        <section className="home-section">
+          <h2 className="eyebrow">
+            Running now <span className="count">{running.length}</span>
+          </h2>
+          <div className="work-list hud">
+            {running.map((s) => (
+              <SessionRow key={s.id} session={s} now={now} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+      <section className="home-section">
+        <h2 className="eyebrow">Recent work</h2>
+        {recent.length > 0 ? (
+          <div className="work-list">
+            {recent.map((s) => (
+              <SessionRow key={s.id} session={s} now={now} />
+            ))}
+          </div>
+        ) : (
+          <p className="empty-line">{connection === 'open' ? 'Nothing yet. Ask Morpheus for something above.' : 'Waiting for Morpheus…'}</p>
+        )}
+      </section>
+    </>
   );
 }
 
@@ -96,7 +130,7 @@ export function useMorpheusAsk(): Ask {
   };
 }
 
-export function useMorpheusNewChat(): () => void {
+export function useMorpheusNewSession(): () => void {
   const { createSession, openSession, link } = useMorpheus();
   const router = useRouter();
   return useCallback(() => {
@@ -106,4 +140,26 @@ export function useMorpheusNewChat(): () => void {
     }
     void createSession().then((id) => id && openSession(id));
   }, [createSession, openSession, link, router]);
+}
+
+export function useMorpheusPalette(): PaletteItem[] {
+  const { sessions, openSession } = useMorpheus();
+  const newSession = useMorpheusNewSession();
+  return useMemo(() => {
+    const now = Date.now();
+    return [
+      { id: 'morpheus:new', group: 'Morpheus', label: 'New session', glyph: '+', run: newSession },
+      ...sessions.map((s) => {
+        const [glyph] = sessionGlyph(s.status);
+        return {
+          id: `morpheus:s:${s.id}`,
+          group: 'Sessions',
+          label: s.title,
+          detail: `${projectName(s.cwd)} · ${s.status === 'running' ? 'running' : timeAgo(s.updatedAt, now)}`,
+          glyph,
+          run: () => openSession(s.id),
+        };
+      }),
+    ];
+  }, [sessions, openSession, newSession]);
 }

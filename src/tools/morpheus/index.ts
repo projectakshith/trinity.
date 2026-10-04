@@ -1,5 +1,5 @@
 import type { Tool } from '../types';
-import { CardStatus, HomeRecents, NavDot, SidebarRecents, useMorpheusAsk, useMorpheusNewChat } from './shellParts';
+import { CardStatus, HomeWork, NavGlyph, useMorpheusAsk, useMorpheusPalette } from './shellParts';
 import { MORPHEUS_HREF, MorpheusProvider } from './state';
 
 export const morpheus: Tool = {
@@ -9,10 +9,9 @@ export const morpheus: Tool = {
   icon: 'code',
   href: MORPHEUS_HREF,
   Provider: MorpheusProvider,
-  NavBadge: NavDot,
+  Badge: NavGlyph,
   Status: CardStatus,
-  SidebarSection: SidebarRecents,
-  HomeSection: HomeRecents,
+  HomeSection: HomeWork,
   useAsk: useMorpheusAsk,
-  useNewChat: useMorpheusNewChat,
+  usePalette: useMorpheusPalette,
 };

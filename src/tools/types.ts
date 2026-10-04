@@ -6,6 +6,15 @@ export interface Ask {
   submit: (prompt: string) => void;
 }
 
+export interface PaletteItem {
+  id: string;
+  group: string;
+  label: string;
+  detail?: string;
+  glyph?: string;
+  run: () => void;
+}
+
 export interface Tool {
   id: string;
   name: string;
@@ -13,10 +22,9 @@ export interface Tool {
   icon: IconName;
   href: string;
   Provider?: ComponentType<{ children: ReactNode }>;
-  NavBadge?: ComponentType;
+  Badge?: ComponentType;
   Status?: ComponentType;
-  SidebarSection?: ComponentType;
   HomeSection?: ComponentType;
   useAsk?: () => Ask;
-  useNewChat?: () => () => void;
+  usePalette?: () => PaletteItem[];
 }

@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { Thread } from 'morpheus/client';
 import { fmtDuration } from '@/lib/format';
 import { Icon } from '@/ui/Icon';
+import { glyphs } from '@/ui/glyphs';
 import { Markdown } from '@/ui/Markdown';
 import { Steps } from './Steps';
 
@@ -22,24 +23,32 @@ function CopyButton({ text }: { text: string }) {
 
 const Turn = memo(function Turn({ thread, cwd }: { thread: Thread; cwd: string }) {
   const done = thread.status === 'completed' || thread.status === 'aborted' || thread.status === 'error';
+  const [glyph, tone] =
+    thread.status === 'running' ? [glyphs.running, 'on'] : thread.status === 'error' ? [glyphs.error, 'bad'] : thread.status === 'aborted' ? [glyphs.bulletOpen, 'faint'] : [glyphs.bullet, 'on'];
   return (
     <div className="turn">
-      <div className="msg-user">
-        <div className="bubble">{thread.prompt}</div>
-        {thread.status === 'queued' ? <div className="queued">Queued — runs after the current task</div> : null}
+      <div className="turn-row turn-user">
+        <span className="glyph turn-glyph">{glyphs.bulletOpen}</span>
+        <div className="turn-body">
+          <div className="turn-prompt">{thread.prompt}</div>
+          {thread.status === 'queued' ? <div className="queued">{glyphs.pending} Queued, runs after the current task</div> : null}
+        </div>
       </div>
 
       {thread.status !== 'queued' ? (
-        <div className={`msg-assistant${thread.status === 'error' ? ' is-error' : ''}`}>
-          <Steps thread={thread} cwd={cwd} />
-          {thread.response ? <Markdown source={thread.response} className="prose" /> : null}
-          {done && thread.response ? (
-            <div className="msg-foot">
-              <CopyButton text={thread.response} />
-              <span>{thread.status === 'aborted' ? 'Stopped' : fmtDuration(thread.durationMs ?? 0)}</span>
-              {thread.model ? <span>· {thread.model}</span> : null}
-            </div>
-          ) : null}
+        <div className={`turn-row msg-assistant${thread.status === 'error' ? ' is-error' : ''}`}>
+          <span className={`glyph turn-glyph ${tone}`}>{glyph}</span>
+          <div className="turn-body">
+            <Steps thread={thread} cwd={cwd} />
+            {thread.response ? <Markdown source={thread.response} className="prose" /> : null}
+            {done && thread.response ? (
+              <div className="msg-foot">
+                <CopyButton text={thread.response} />
+                <span>{thread.status === 'aborted' ? 'Stopped' : fmtDuration(thread.durationMs ?? 0)}</span>
+                {thread.model ? <span>· {thread.model.split('/').pop()}</span> : null}
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>

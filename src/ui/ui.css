@@ -23,11 +23,12 @@
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
+  background: var(--surface);
 }
 
 .chip-btn:hover { border-color: var(--border-strong); color: var(--text); }
 
-.chip-glyph { color: var(--text-3); }
+.chip-glyph { color: var(--amber); }
 
 .notice {
   display: flex;
@@ -133,14 +134,14 @@
 
 .composer {
   border: 1px solid var(--border);
-  border-radius: 24px;
+  border-radius: 22px;
   background: var(--surface);
   box-shadow: var(--shadow);
-  padding: 12px 12px 10px 20px;
-  transition: border-color 0.15s;
+  padding: 14px 12px 10px 20px;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.composer:focus-within { border-color: var(--border-strong); }
+.composer:focus-within { border-color: var(--border-strong); box-shadow: var(--shadow), 0 0 0 4px var(--hover); }
 
 .composer.is-disabled { opacity: 0.6; }
 
@@ -171,8 +172,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 6px;
+  gap: 8px;
+  margin-top: 8px;
 }
+
+.composer-lead { display: flex; align-items: center; gap: 6px; min-width: 0; margin-left: -8px; }
 
 .tool-chip {
   display: inline-flex;
@@ -185,7 +189,9 @@
   color: var(--text-2);
 }
 
-.tool-glyph { color: var(--text-3); font-size: 13px; line-height: 1; }
+.tool-glyph { color: var(--signal); font-size: 12px; line-height: 1; }
+
+button.tool-chip:hover { color: var(--text); background: var(--hover); }
 
 .round-btn {
   display: grid;

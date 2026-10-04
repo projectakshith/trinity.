@@ -2,19 +2,24 @@
 
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { applySuggestion, type SuggestionItem } from 'morpheus/client';
-import { fmtTokens } from '@/lib/format';
+import { fmtTokens, projectName } from '@/lib/format';
 import { TopBar } from '@/shell/TopBar';
 import type { Autocomplete } from '@/ui/Composer';
 import { Composer } from '@/ui/Composer';
 import { glyphs } from '@/ui/glyphs';
-import { Icon } from '@/ui/Icon';
+import { Icon, type IconName } from '@/ui/Icon';
 import { useClient, useSession } from './client';
 import { Conversation } from './Conversation';
 import { saveLastSession } from './link';
 import { ModelPicker } from './ModelPicker';
+import { PanelToggle } from './panel';
 import { useMorpheus } from './state';
 
-const STARTERS = ['Review my uncommitted changes', 'Explain how this codebase is structured', 'Find and fix a failing test'];
+const STARTERS: { icon: IconName; title: string; prompt: string }[] = [
+  { icon: 'branch', title: 'Review changes', prompt: 'Review my uncommitted changes' },
+  { icon: 'book', title: 'Map the codebase', prompt: 'Explain how this codebase is structured' },
+  { icon: 'wrench', title: 'Fix a failing test', prompt: 'Find and fix a failing test' },
+];
 const DEFAULT_CONTEXT_LIMIT = 128_000;
 
 export function SessionView({ sessionId }: { sessionId: string }) {
@@ -79,23 +84,20 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="view">
-      <TopBar title={snapshot?.title}>
+      <TopBar lead={<PanelToggle />} title={snapshot?.title}>
+        {snapshot ? (
+          <span className="chip" title={snapshot.cwd}>
+            <Icon name="folder" size={13} />
+            {projectName(snapshot.cwd)}
+          </span>
+        ) : null}
         {snapshot?.workspace.branch ? (
-          <span className="chip chip-branch" title={snapshot.cwd}>
+          <span className="chip chip-branch" title={snapshot.workspace.gitStatus ?? undefined}>
             <Icon name="branch" size={13} />
             {snapshot.workspace.branch}
             {snapshot.workspace.gitStatus && snapshot.workspace.gitStatus !== 'clean' ? <span className="chip-glyph">{glyphs.gitDiff}</span> : null}
           </span>
         ) : null}
-        {snapshot ? (
-          <button type="button" className="chip chip-btn" onClick={openModels}>
-            {snapshot.model.split('/').pop()}
-            <Icon name="chevronDown" size={13} />
-          </button>
-        ) : null}
-        <button type="button" className="ghost-btn" onClick={unlink} aria-label="disconnect morpheus">
-          <Icon name="logout" size={15} />
-        </button>
       </TopBar>
 
       {connection === 'unauthorized' ? (
@@ -117,12 +119,15 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       {!snapshot || snapshot.threads.length === 0 ? (
         <div className="scroll">
           <div className="column session-empty">
+            <span className="session-mark">{glyphs.bullet}</span>
             <h1 className="greeting small">What should Morpheus work on?</h1>
             {snapshot ? <p className="faint mono cwd">{snapshot.cwd}</p> : null}
             <div className="starters">
               {STARTERS.map((s) => (
-                <button key={s} type="button" className="starter" data-prompt={s} onClick={starter} disabled={!snapshot || connection !== 'open'}>
-                  {s}
+                <button key={s.prompt} type="button" className="starter" data-prompt={s.prompt} onClick={starter} disabled={!snapshot || connection !== 'open'}>
+                  <Icon name={s.icon} size={16} className="starter-icon" />
+                  <span className="starter-title">{s.title}</span>
+                  <span className="starter-prompt">{s.prompt}</span>
                 </button>
               ))}
             </div>
@@ -140,6 +145,15 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           disabled={connection !== 'open' || !snapshot}
           autoFocus
           meta={meta}
+          leading={
+            snapshot ? (
+              <button type="button" className="tool-chip" onClick={openModels}>
+                <span className="tool-glyph">{glyphs.chip}</span>
+                {snapshot.model.split('/').pop()}
+                <Icon name="chevronDown" size={12} />
+              </button>
+            ) : null
+          }
           onSubmit={send}
           onStop={stop}
         />

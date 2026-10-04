@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent } from 'react';
-import { glyphs } from './glyphs';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { Icon } from './Icon';
 
 export interface Suggestion {
@@ -22,7 +21,7 @@ interface ComposerProps {
   running?: boolean;
   disabled?: boolean;
   autoFocus?: boolean;
-  toolLabel?: string;
+  leading?: ReactNode;
   meta?: string;
   onSubmit: (text: string) => void;
   onStop?: () => void;
@@ -30,7 +29,7 @@ interface ComposerProps {
 
 const SUGGEST_DELAY_MS = 90;
 
-export function Composer({ autocomplete, placeholder, running = false, disabled = false, autoFocus = false, toolLabel, meta, onSubmit, onStop }: ComposerProps) {
+export function Composer({ autocomplete, placeholder, running = false, disabled = false, autoFocus = false, leading, meta, onSubmit, onStop }: ComposerProps) {
   const [value, setValue] = useState('');
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selected, setSelected] = useState(0);
@@ -156,7 +155,7 @@ export function Composer({ autocomplete, placeholder, running = false, disabled 
           ))}
         </ul>
       ) : null}
-      <div className={`composer${toolLabel ? '' : ' inline'}${disabled ? ' is-disabled' : ''}`}>
+      <div className={`composer${leading ? '' : ' inline'}${disabled ? ' is-disabled' : ''}`}>
         <textarea
           ref={inputRef}
           rows={1}
@@ -169,12 +168,7 @@ export function Composer({ autocomplete, placeholder, running = false, disabled 
           autoCapitalize="sentences"
         />
         <div className="composer-bar">
-          {toolLabel ? (
-            <span className="tool-chip">
-              <span className="tool-glyph">{glyphs.chip}</span>
-              {toolLabel}
-            </span>
-          ) : null}
+          {leading ? <div className="composer-lead">{leading}</div> : null}
           {showStop ? (
             <button type="button" className="round-btn stop" onClick={onStop} aria-label="stop">
               <Icon name="stop" size={14} />

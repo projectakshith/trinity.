@@ -2,44 +2,50 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
+import { useTheme } from '@/lib/theme';
 import { tools } from '@/tools/registry';
-import { Sidebar } from './Sidebar';
-
-const NARROW = '(max-width: 860px)';
+import { Palette } from './Palette';
+import { Rail } from './Rail';
 
 interface Shell {
-  showSidebar: () => void;
+  isDark: boolean;
+  toggleTheme: () => void;
+  openPalette: () => void;
 }
 
-const ShellContext = createContext<Shell>({ showSidebar: () => undefined });
+const ShellContext = createContext<Shell>({ isDark: false, toggleTheme: () => undefined, openPalette: () => undefined });
 
 export function useShell(): Shell {
   return useContext(ShellContext);
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const [sidebarHidden, setSidebarHidden] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const { isDark, toggle } = useTheme();
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const pathname = usePathname();
 
-  useEffect(() => setDrawerOpen(false), [pathname]);
+  useEffect(() => setPaletteOpen(false), [pathname]);
 
-  const showSidebar = useCallback(() => {
-    if (window.matchMedia(NARROW).matches) setDrawerOpen(true);
-    else setSidebarHidden(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
-  const hideSidebar = useCallback(() => {
-    if (window.matchMedia(NARROW).matches) setDrawerOpen(false);
-    else setSidebarHidden(true);
-  }, []);
-  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
-  const shell = useMemo(() => ({ showSidebar }), [showSidebar]);
+
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
+  const closePalette = useCallback(() => setPaletteOpen(false), []);
+  const shell = useMemo(() => ({ isDark, toggleTheme: toggle, openPalette }), [isDark, toggle, openPalette]);
 
   let content = (
-    <div className={`app${sidebarHidden ? ' sidebar-hidden' : ''}${drawerOpen ? ' drawer-open' : ''}`}>
-      <Sidebar onCollapse={hideSidebar} onNavigate={closeDrawer} />
-      {drawerOpen ? <button type="button" className="scrim" aria-label="close sidebar" onClick={closeDrawer} /> : null}
+    <div className="app">
+      <Rail />
       <main className="main">{children}</main>
+      {paletteOpen ? <Palette onClose={closePalette} /> : null}
     </div>
   );
   for (const tool of [...tools].reverse()) {
