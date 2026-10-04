@@ -38,7 +38,7 @@ function clock(appleSeconds: number): string {
   return new Date((appleSeconds + APPLE_EPOCH) * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
-export function readWhatsApp(path: string): SourceResult {
+export function readWhatsApp(path: string, ownerName = 'You'): SourceResult {
   if (!existsSync(path)) return { source: 'whatsapp', ok: false, error: 'WhatsApp desktop database not found', items: [] };
   let db: Database;
   try {
@@ -60,9 +60,12 @@ export function readWhatsApp(path: string): SourceResult {
     const since = now - WINDOW_HOURS * 3600;
     const unreadSince = now - UNREAD_WINDOW_HOURS * 3600;
     const memberCols = columns(db, 'ZWAGROUPMEMBER');
-    const memberName = ['ZCONTACTNAME', 'ZFIRSTNAME'].filter((c) => memberCols.has(c)).map((c) => `gm.${c}`);
-    const sender = `COALESCE(${[...memberName, 'm.ZPUSHNAME', 'NULL'].join(', ')})`;
-    const joinMember = memberCols.size ? 'LEFT JOIN ZWAGROUPMEMBER gm ON gm.Z_PK = m.ZGROUPMEMBER' : '';
+    const hasPushTable = columns(db, 'ZWAPROFILEPUSHNAME').has('ZPUSHNAME');
+    const memberName = ['ZCONTACTNAME', 'ZFIRSTNAME'].filter((c) => memberCols.has(c)).map((c) => `NULLIF(gm.${c}, '')`);
+    const sender = `COALESCE(${[...memberName, hasPushTable ? "NULLIF(pn.ZPUSHNAME, '')" : null, "NULLIF(m.ZPUSHNAME, '')", memberCols.has('ZMEMBERJID') ? "'+' || substr(gm.ZMEMBERJID, 1, instr(gm.ZMEMBERJID, '@') - 1)" : null, 'NULL'].filter(Boolean).join(', ')})`;
+    const joinMember = memberCols.size
+      ? `LEFT JOIN ZWAGROUPMEMBER gm ON gm.Z_PK = m.ZGROUPMEMBER${hasPushTable ? ' LEFT JOIN ZWAPROFILEPUSHNAME pn ON pn.ZJID = gm.ZMEMBERJID' : ''}`
+      : '';
 
     const chats = db
       .query(
@@ -88,16 +91,17 @@ export function readWhatsApp(path: string): SourceResult {
       const floor = (chat.unread ?? 0) > 0 ? unreadSince : since;
       const rows = (messagesFor.all(chat.pk, floor, MAX_MESSAGES) as MessageRow[]).reverse();
       if (rows.length === 0) continue;
-      const name = chat.name ?? chat.jid ?? 'Unknown chat';
+      const name = (chat.name ?? chat.jid ?? 'Unknown chat').replace(/[\u200e\u200f]/gu, '').trim();
       const group = chat.type === 1 || (chat.jid ?? '').endsWith('@g.us');
       if (group && (chat.unread ?? 0) === 0) continue;
-      const lines = rows.map((r) => `${clock(r.date)} ${r.mine ? 'me' : group ? (r.sender ?? 'someone') : name}: ${clip(r.text)}`);
+      if (!group && name === 'You') continue;
+      const lines = rows.map((r) => `${clock(r.date)} ${r.mine ? `${ownerName} (you)` : group ? (r.sender ?? 'unknown member') : name}: ${clip(r.text)}`);
       items.push({
         source: 'whatsapp',
         ref: `wa:${chat.pk}`,
         at: ((chat.last ?? rows[rows.length - 1].date) + APPLE_EPOCH) * 1000,
         from: name,
-        title: group ? `${name} (group)` : name,
+        title: group ? `group "${name}"` : `DM with ${name}`,
         text: lines.join('\n'),
         unread: (chat.unread ?? 0) > 0,
       });
