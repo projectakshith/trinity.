@@ -41,6 +41,7 @@ function clock(appleSeconds: number): string {
 export interface GroupFilter {
   mutedGroups: string[];
   importantGroups: string[];
+  mutedChats: string[];
 }
 
 function norm(name: string): string {
@@ -52,7 +53,7 @@ function listed(name: string, patterns: string[]): boolean {
   return patterns.some((p) => n.includes(norm(p)));
 }
 
-export function readWhatsApp(path: string, ownerName = 'You', filter: GroupFilter = { mutedGroups: [], importantGroups: [] }): SourceResult {
+export function readWhatsApp(path: string, ownerName = 'You', filter: GroupFilter = { mutedGroups: [], importantGroups: [], mutedChats: [] }): SourceResult {
   if (!existsSync(path)) return { source: 'whatsapp', ok: false, error: 'WhatsApp desktop database not found', items: [] };
   let db: Database;
   try {
@@ -111,7 +112,7 @@ export function readWhatsApp(path: string, ownerName = 'You', filter: GroupFilte
       const important = group && listed(name, filter.importantGroups);
       if (group && listed(name, filter.mutedGroups)) continue;
       if (group && !important && (chat.unread ?? 0) === 0) continue;
-      if (!group && name === 'You') continue;
+      if (!group && (name === 'You' || listed(name, filter.mutedChats))) continue;
       const lines = rows.map((r) => `${clock(r.date)} ${r.mine ? `${ownerName} (you)` : group ? (r.sender ?? 'unknown member') : name}: ${clip(r.text)}`);
       items.push({
         source: 'whatsapp',
