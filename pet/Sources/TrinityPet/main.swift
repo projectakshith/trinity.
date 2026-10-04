@@ -142,7 +142,7 @@ final class PetController: NSObject {
         let bubbleX = min(max(creature.x + size.width / 2 - 150, 8), windowSize.width - 308)
         if layout.bubbleX != bubbleX { layout.bubbleX = bubbleX }
 
-        let showingBubble = model.bubbleOpen || model.toast != nil || model.greeting != nil
+        let showingBubble = model.bubbleOpen || model.toast != nil || model.greeting != nil || model.quip != nil
         let ignore = !(showingBubble || pressing || creatureRect.contains(NSEvent.mouseLocation))
         if panel.ignoresMouseEvents != ignore { panel.ignoresMouseEvents = ignore }
     }
@@ -174,7 +174,7 @@ final class PetController: NSObject {
             windowsAt = .distantPast
             model.drop(world: world())
         } else {
-            model.toggleBubble()
+            model.click()
             if model.digest == nil { model.refresh() }
         }
         return true

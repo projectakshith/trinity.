@@ -7,6 +7,7 @@ enum Expression: Equatable {
     case alert
     case thinking
     case talking
+    case annoyed
     case flustered
     case asleep
     case glitch
@@ -107,10 +108,14 @@ enum Sprite {
 
     struct Layers {
         var ink: [Pixel] = []
+        var brow: [Pixel] = []
         var paper: [Pixel] = []
         var code: [Pixel] = []
         var ember: [Pixel] = []
-        var showHead = true
+    }
+
+    private static func px(_ list: [(Int, Int)]) -> [Pixel] {
+        list.map { Pixel(x: $0.0, y: $0.1) }
     }
 
     static func layers(for expression: Expression, phase: Double, look: Int, badge: Bool) -> Layers {
@@ -118,49 +123,71 @@ enum Sprite {
         let glasses = { (dx: Int, gy: Int) -> [Pixel] in
             lens(5 + dx, gy) + lens(13 + dx, gy) + run(gy, 10 + dx, 12 + dx) + [Pixel(x: 4 + dx, y: gy), Pixel(x: 18 + dx, y: gy)]
         }
+        let sideEye = { (dx: Int) -> [Pixel] in
+            run(13, 7 + dx, 8 + dx) + run(13, 15 + dx, 16 + dx)
+        }
+        let squint = { (dx: Int) -> [Pixel] in
+            [Pixel(x: 8 + dx, y: 13), Pixel(x: 16 + dx, y: 13)]
+        }
         let glint = { (dx: Int, gy: Int) -> [Pixel] in
-            let t = phase.truncatingRemainder(dividingBy: 5)
+            let t = phase.truncatingRemainder(dividingBy: 6)
             guard t < 0.45 else { return [] }
             let k = Int(t / 0.15)
             return [Pixel(x: 6 + dx + k, y: gy), Pixel(x: 14 + dx + k, y: gy)]
         }
+        let flatBrows = run(11, 7, 9) + run(11, 13, 16)
+        let archBrow = run(11, 7, 9) + px([(13, 11), (14, 10), (15, 10), (16, 10)])
+        let angryBrows = px([(7, 11), (8, 11), (9, 12), (13, 12), (14, 11), (15, 11), (16, 11)])
+        let raisedBrows = run(10, 7, 9) + run(10, 13, 16)
+        let smirk = px([(10, 20), (11, 20), (12, 20), (13, 19)])
+        let frown = px([(10, 21), (11, 20), (12, 20), (13, 21)])
+        let pout = run(20, 10, 12) + [Pixel(x: 11, y: 21)]
 
         switch expression {
         case .neutral:
-            l.ink = glasses(look, 14)
-            l.paper = glint(look, 14)
+            l.ink = glasses(look, 15) + sideEye(look) + smirk
+            l.brow = archBrow
+            l.paper = glint(look, 15)
+        case .annoyed:
+            l.ink = glasses(look, 15) + squint(look) + frown
+            l.brow = angryBrows
         case .talking:
-            l.ink = glasses(0, 14) + run(20, 10, 12) + (Int(phase * 8) % 2 == 0 ? run(21, 10, 12) : [])
-            l.paper = glint(0, 14)
+            l.ink = glasses(look, 15) + sideEye(look) + run(20, 10, 12) + (Int(phase * 8) % 2 == 0 ? run(21, 10, 12) : [])
+            l.brow = archBrow
         case .alert:
-            l.ink = glasses(0, 16) + [Pixel(x: 7, y: 13), Pixel(x: 7, y: 14), Pixel(x: 15, y: 13), Pixel(x: 15, y: 14)] + run(20, 10, 12) + run(21, 10, 12)
+            l.ink = glasses(0, 16) + px([(7, 13), (7, 14), (8, 14), (15, 13), (15, 14), (16, 14)]) + run(20, 10, 12) + run(21, 10, 12)
+            l.brow = raisedBrows
         case .thinking:
-            l.ink = glasses(0, 14)
+            l.ink = glasses(look, 14) + pout
+            l.brow = archBrow
             let i = Int(phase * 12) % 10
             l.code = [Pixel(x: i < 5 ? 5 + i : 13 + i - 5, y: 14)]
         case .chill:
-            l.ink = run(14, 6, 8) + [Pixel(x: 5, y: 15), Pixel(x: 9, y: 15)] + run(14, 14, 16) + [Pixel(x: 13, y: 15), Pixel(x: 17, y: 15)]
-                + [Pixel(x: 9, y: 20), Pixel(x: 13, y: 20)] + run(21, 10, 12)
+            l.ink = glasses(look, 15) + squint(look) + smirk
+            l.brow = flatBrows
+            l.paper = glint(look, 15)
         case .focused:
-            l.ink = lens(5, 15) + lens(13, 14) + [Pixel(x: 10, y: 15), Pixel(x: 11, y: 14), Pixel(x: 12, y: 14), Pixel(x: 4, y: 15), Pixel(x: 18, y: 14)]
-                + run(20, 10, 12) + [Pixel(x: 13, y: 19)]
-            l.paper = glint(0, 14).filter { $0.x >= 13 }
+            l.ink = glasses(look, 14) + run(20, 10, 12)
+            l.brow = angryBrows
+            l.paper = glint(look, 14)
         case .flustered:
-            l.ink = lens(4, 14) + lens(12, 16) + [Pixel(x: 9, y: 15), Pixel(x: 10, y: 15), Pixel(x: 11, y: 16), Pixel(x: 3, y: 14)]
-                + [Pixel(x: 9, y: 21), Pixel(x: 10, y: 20), Pixel(x: 11, y: 21), Pixel(x: 12, y: 20), Pixel(x: 13, y: 21)]
+            l.ink = lens(4, 14) + lens(12, 16) + px([(9, 15), (10, 15), (11, 16), (3, 14)]) + run(20, 9, 13) + run(21, 10, 12)
+            l.brow = angryBrows
         case .asleep:
             l.ink = run(15, 5, 8) + run(15, 14, 17) + run(20, 10, 12)
+            l.brow = flatBrows
             let rise = Int((phase * 3).truncatingRemainder(dividingBy: 6))
-            l.code = run(2 - rise + 6, 19, 21) + [Pixel(x: 20, y: 3 - rise + 6)] + run(4 - rise + 6, 19, 21)
+            l.code = run(8 - rise, 19, 21) + [Pixel(x: 20, y: 9 - rise)] + run(10 - rise, 19, 21)
         case .glitch:
             let jolt = Int(phase * 14) % 3 - 1
             l.ink = run(14, 5 + jolt, 9 + jolt) + run(14, 13 + jolt, 17 + jolt) + run(15, 6 - jolt, 8 - jolt) + run(15, 14 - jolt, 16 - jolt) + run(14, 10, 12) + run(20, 10, 12)
+            l.brow = angryBrows
             l.code = [Pixel(x: 8 + jolt, y: 13)]
             l.ember = [Pixel(x: 14 - jolt, y: 16)]
         }
 
         if badge && expression != .asleep {
-            l.ember += [(20, -1), (19, 0), (21, 0), (18, 1), (20, 1), (22, 1), (19, 2), (21, 2), (20, 3)].map { Pixel(x: $0.0, y: $0.1) }
+            l.ember += px([(20, -1), (19, 0), (21, 0), (18, 1), (20, 1), (22, 1), (19, 2), (21, 2), (20, 3)])
         }
         return l
     }
@@ -187,8 +214,7 @@ struct PixelHead: View {
             paint(Sprite.strandCells, Sprite.sheen)
             paint(Sprite.faceCells, Sprite.skin)
             paint(Sprite.shadowed, Sprite.skinShade)
-            let mouthless = expression == .neutral || expression == .thinking
-            paint(mouthless ? Sprite.run(20, 10, 12) : [], Sprite.lip)
+            paint(layers.brow, Sprite.hair)
             paint(layers.ink.filter { $0.y >= 19 }, Sprite.lip)
             paint(layers.ink.filter { $0.y < 19 && [3, 4, 10, 11, 12, 18, 19].contains($0.x) }, Sprite.frame)
             paint(layers.ink.filter { $0.y < 19 && ![3, 4, 10, 11, 12, 18, 19].contains($0.x) }, Sprite.lens)

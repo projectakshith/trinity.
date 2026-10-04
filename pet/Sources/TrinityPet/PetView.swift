@@ -76,6 +76,8 @@ struct PetBubble: View {
             header
             if let line = model.greeting {
                 greeting(line)
+            } else if let line = model.quip {
+                Text(line).font(Theme.mono(13)).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
             } else if let toast = model.toast {
                 InsightRow(insight: toast)
             } else {
@@ -90,7 +92,7 @@ struct PetBubble: View {
         .shadow(color: .black.opacity(0.4), radius: 18, y: 8)
         .environment(\.colorScheme, .dark)
         .contentShape(Rectangle())
-        .onTapGesture { if model.toast != nil || model.greeting != nil { model.toggleBubble() } }
+        .onTapGesture { if model.toast != nil || model.greeting != nil || model.quip != nil { model.toggleBubble() } }
     }
 
     private var header: some View {
@@ -221,15 +223,15 @@ struct PetScene: View {
         let size = PetModel.size
         ZStack(alignment: .bottomLeading) {
             Color.clear
-            if model.bubbleOpen || model.toast != nil || model.greeting != nil {
+            if model.bubbleOpen || model.toast != nil || model.greeting != nil || model.quip != nil {
                 PetBubble(model: model)
                     .padding(.leading, layout.bubbleX)
                     .padding(layout.above ? .bottom : .top, layout.above ? layout.creature.y + size.height + 4 : height - layout.creature.y + 4)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: layout.above ? .bottomLeading : .topLeading)
                     .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.95, anchor: layout.above ? .bottom : .top)), removal: .identity))
             }
-            PixelHead(expression: model.expression, phase: model.phase, look: Int(model.look), badge: model.attention > 0)
-                .offset(y: -model.hop - (sin(model.phase * 1.3) > 0.4 ? 1 : 0))
+            PixelHead(expression: model.expression, phase: model.phase, look: model.look, badge: model.attention > 0)
+                .offset(x: (model.lookX * 1.5).rounded(), y: -model.hop - (sin(model.phase * 1.3) > 0.4 ? 1 : 0) - (model.lookY * 1.5).rounded() - (model.walking ? (sin(model.phase * 8) > 0 ? 1 : 0) : 0))
                 .opacity(model.opacity)
                 .padding(.leading, layout.creature.x)
                 .padding(.bottom, layout.creature.y)
@@ -237,5 +239,6 @@ struct PetScene: View {
         .animation(.spring(response: 0.26, dampingFraction: 0.85), value: model.bubbleOpen)
         .animation(.spring(response: 0.26, dampingFraction: 0.85), value: model.toast)
         .animation(.spring(response: 0.26, dampingFraction: 0.85), value: model.greeting)
+        .animation(.spring(response: 0.26, dampingFraction: 0.85), value: model.quip)
     }
 }

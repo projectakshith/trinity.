@@ -44,19 +44,34 @@ private struct Ledge {
     }
 }
 
+private enum Motion {
+    case still
+    case walk(to: CGFloat)
+    case glide(from: CGPoint, to: Surface, offset: CGFloat, start: Date, duration: Double)
+}
+
+private enum Quips {
+    static let poked = ["Stop poking me.", "Seriously?", "Hands off.", "One more and I'm muting you.", "Tch."]
+    static let crowded = ["Personal space.", "Can I help you?", "You're hovering.", "Back off a little."]
+    static let dropped = ["Fine. I'll sit here.", "Rude.", "Don't do that again.", "Whatever. Here then."]
+    static let quiet = ["Nothing for you. Go build something.", "All quiet. Don't make it weird.", "I'm busy. You're fine.", "What do you want?"]
+}
+
 @MainActor
 final class PetModel: ObservableObject {
     static let size = Sprite.size
 
     @Published var mode: PetMode = .rest
     @Published var phase: Double = 0
-    @Published var look: CGFloat = 0
+    @Published var lookX: CGFloat = 0
+    @Published var lookY: CGFloat = 0
     @Published var hop: CGFloat = 0
     @Published var walking = false
     @Published var opacity: Double = 1
     @Published var bubbleOpen = false
     @Published var toast: Insight?
     @Published var greeting: String?
+    @Published var quip: String?
     @Published var digest: Digest?
     @Published var error: String?
     @Published var refreshing = false
@@ -65,10 +80,15 @@ final class PetModel: ObservableObject {
     var position = CGPoint(x: 400, y: 0)
     private var surface: Surface?
     private var offset: CGFloat = 0
-    private var shuffleTo: CGFloat?
-    private var nextShuffle = Date().addingTimeInterval(30)
-    private var nextGlance = Date().addingTimeInterval(4)
-    private var glanceUntil = Date.distantPast
+    private var motion = Motion.still
+    private var nextStroll = Date().addingTimeInterval(.random(in: 40...80))
+    private var nextWander = Date().addingTimeInterval(.random(in: 180...300))
+    private var placedUntil = Date.distantPast
+    private var annoyedUntil = Date.distantPast
+    private var hoverSince: Date?
+    private var lastCrowdQuip = Date.distantPast
+    private var pokes: [Date] = []
+    private var quipUntil = Date.distantPast
     private var relocateStart: Date?
     private var toastUntil = Date.distantPast
     private var toastStart = Date.distantPast
@@ -76,7 +96,7 @@ final class PetModel: ObservableObject {
     private var pendingToast: Insight?
     private var seen: Set<String>
 
-    private let shuffleSpeed: CGFloat = 20
+    private let strollSpeed: CGFloat = 28
     private let sleepAfter: TimeInterval = 600
     private static let seenKey = "seenInsights"
     private static let greetingKey = "lastGreeting"
@@ -94,13 +114,18 @@ final class PetModel: ObservableObject {
         Int(Date().timeIntervalSince(greetingStart) / 0.07)
     }
 
+    var look: Int {
+        lookX > 0.4 ? 1 : lookX < -0.4 ? -1 : 0
+    }
+
     var expression: Expression {
         if mode == .held { return .flustered }
         if mode == .sleep { return .asleep }
         if error != nil && digest == nil { return .glitch }
         if toast != nil || greeting != nil || mode == .alert { return .alert }
+        if Date() < annoyedUntil { return .annoyed }
         if refreshing { return .thinking }
-        if bubbleOpen { return .talking }
+        if bubbleOpen || quip != nil { return .talking }
         if attention > 0 { return .focused }
         if let digest, digest.insights.isEmpty, digest.sources.contains(where: \.ok) { return .chill }
         return .neutral
@@ -122,49 +147,89 @@ final class PetModel: ObservableObject {
             return
         }
 
+        if case let .glide(from, to, target, start, duration) = motion {
+            glide(now, world, from, to, target, start, duration)
+            track(world, now, dt)
+            return
+        }
+
         guard let current = surface, let ledge = ledge(for: current, world) else {
             relocateStart = now
             return
         }
 
-        if let to = shuffleTo {
-            let step = shuffleSpeed * CGFloat(dt)
+        if case .walk(let to) = motion {
+            let step = strollSpeed * CGFloat(dt)
             let delta = to - offset
             if abs(delta) <= step {
                 offset = to
-                shuffleTo = nil
+                motion = .still
             } else {
                 offset += delta > 0 ? step : -step
-                if !ledge.vertical { look = delta > 0 ? 1 : -1 }
             }
         }
         offset = ledge.clamp(offset)
         position = ledge.point(offset)
-        walking = shuffleTo != nil
+        walking = { if case .walk = motion { return true } else { return false } }()
 
-        if bubbleOpen || mode == .alert { look = 0; return }
-        if mode == .sleep { return }
+        track(world, now, dt)
+        if bubbleOpen || mode != .rest { return }
 
         let typing = world.keyIdle < 3
-        if shuffleTo == nil && !typing && now >= nextShuffle && ledge.length > 8 {
-            nextShuffle = now.addingTimeInterval(.random(in: 35...80))
-            shuffleTo = ledge.clamp(offset + CGFloat.random(in: 8...26) * (Bool.random() ? 1 : -1))
+        guard case .still = motion, !typing, now >= placedUntil else { return }
+
+        if now >= nextWander {
+            nextWander = now.addingTimeInterval(.random(in: 180...360))
+            if let spot = wanderSpot(world), spot.0 != current || abs(spot.1 - offset) > 60 {
+                if spot.0 == current {
+                    motion = .walk(to: ledge.clamp(spot.1))
+                } else {
+                    startGlide(to: spot.0, offset: spot.1, world)
+                }
+                return
+            }
+        }
+        if now >= nextStroll && ledge.length > 20 {
+            nextStroll = now.addingTimeInterval(.random(in: 40...90))
+            motion = .walk(to: ledge.clamp(offset + CGFloat.random(in: 40...140) * (Bool.random() ? 1 : -1)))
+        }
+    }
+
+    private func track(_ world: World, _ now: Date, _ dt: Double) {
+        let center = CGPoint(x: position.x + Self.size.width / 2, y: position.y + Self.size.height / 2)
+        let dx = world.cursor.x - center.x
+        let dy = world.cursor.y - center.y
+        let dist = hypot(dx, dy)
+
+        var tx = max(-1, min(1, dx / 220))
+        var ty = max(-1, min(1, dy / 220))
+
+        if mode == .rest && !bubbleOpen && dist < 95 {
+            if hoverSince == nil { hoverSince = now }
+            if now.timeIntervalSince(hoverSince!) > 1.2 {
+                annoyedUntil = now.addingTimeInterval(1.5)
+                tx = -tx
+                ty = 0
+                if now.timeIntervalSince(lastCrowdQuip) > 240 {
+                    lastCrowdQuip = now
+                    say(Quips.crowded.randomElement()!, for: 2.2)
+                }
+            }
+        } else {
+            hoverSince = nil
         }
 
-        if shuffleTo == nil {
-            if now >= nextGlance {
-                nextGlance = now.addingTimeInterval(.random(in: 6...14))
-                glanceUntil = now.addingTimeInterval(.random(in: 1.2...2.5))
-            }
-            if case .side(_, let right) = current {
-                look = right ? -1 : 1
-            } else if now < glanceUntil {
-                let dx = world.cursor.x - (position.x + Self.size.width / 2)
-                look = dx > 40 ? 1 : dx < -40 ? -1 : 0
-            } else {
-                look = 0
-            }
+        if case let .glide(from, _, _, _, _) = motion {
+            tx = position.x >= from.x ? 1 : -1
+            ty = 0
+        } else if case .walk(let to) = motion {
+            tx = to > offset ? 1 : -1
         }
+        if mode == .alert || mode == .sleep { tx = 0; ty = 0 }
+
+        let k = CGFloat(min(1, dt * 6))
+        lookX += (tx - lookX) * k
+        lookY += (ty - lookY) * k
     }
 
     private func updateTimers(_ now: Date) {
@@ -176,6 +241,7 @@ final class PetModel: ObservableObject {
             toast = nil
             if mode == .alert { mode = .rest }
         }
+        if quip != nil && now >= quipUntil { quip = nil }
         let sinceToast = now.timeIntervalSince(toastStart)
         if (toast != nil || greeting != nil) && sinceToast < 1.6 {
             let cycle = sinceToast.truncatingRemainder(dividingBy: 0.8)
@@ -185,12 +251,19 @@ final class PetModel: ObservableObject {
         }
     }
 
+    private func say(_ line: String, for seconds: TimeInterval) {
+        guard greeting == nil, toast == nil, !bubbleOpen else { return }
+        quip = line
+        quipUntil = Date().addingTimeInterval(seconds)
+    }
+
     private func relocate(_ now: Date, _ start: Date, _ world: World) {
         let t = now.timeIntervalSince(start)
         if t < 0.35 {
             opacity = 1 - t / 0.35
-        } else if surface == nil || ledge(for: surface!, world) == nil {
+        } else if surface.flatMap({ ledge(for: $0, world) }) == nil {
             surface = nil
+            motion = .still
             settle(at: home(world), world)
             opacity = 0
         } else if t < 0.8 {
@@ -199,6 +272,49 @@ final class PetModel: ObservableObject {
             opacity = 1
             relocateStart = nil
         }
+    }
+
+    private func startGlide(to surface: Surface, offset target: CGFloat, _ world: World) {
+        guard let ledge = ledge(for: surface, world) else { return }
+        let clamped = ledge.clamp(target)
+        let dist = hypot(ledge.point(clamped).x - position.x, ledge.point(clamped).y - position.y)
+        motion = .glide(from: position, to: surface, offset: clamped, start: Date(), duration: min(max(Double(dist) / 90, 1.6), 7))
+        walking = true
+    }
+
+    private func glide(_ now: Date, _ world: World, _ from: CGPoint, _ to: Surface, _ target: CGFloat, _ start: Date, _ duration: Double) {
+        guard let ledge = ledge(for: to, world) else {
+            motion = .still
+            walking = false
+            relocateStart = now
+            return
+        }
+        let end = ledge.point(ledge.clamp(target))
+        let t = min(1, now.timeIntervalSince(start) / duration)
+        let e = CGFloat(t * t * (3 - 2 * t))
+        position = CGPoint(x: from.x + (end.x - from.x) * e, y: from.y + (end.y - from.y) * e)
+        if t >= 1 {
+            motion = .still
+            walking = false
+            surface = to
+            offset = ledge.clamp(target)
+            nextStroll = now.addingTimeInterval(.random(in: 40...90))
+        }
+    }
+
+    private func wanderSpot(_ world: World) -> (Surface, CGFloat)? {
+        let size = Self.size
+        let index = screenIndex(containing: world.cursor, world)
+        let v = world.screens[index].visibleFrame
+        let near = world.cursor.x - v.minX - size.width / 2 + CGFloat.random(in: -90...90)
+        let roll = Double.random(in: 0...1)
+        if roll < 0.5 { return (.floor(index), near) }
+        if roll < 0.75, let front = world.frontPID.flatMap({ pid in world.windows.first(where: { $0.pid == pid }) }), perchable(front, world) {
+            let (minX, _, _) = span(front, world)
+            return (.window(front.id), world.cursor.x - minX - size.width / 2 + CGFloat.random(in: -60...60))
+        }
+        let right = world.cursor.x > v.midX
+        return (.side(index, right: right), world.cursor.y - v.minY - 20 - size.height / 2)
     }
 
     private func screenIndex(containing point: CGPoint, _ world: World) -> Int {
@@ -237,7 +353,7 @@ final class PetModel: ObservableObject {
             return Ledge(start: CGPoint(x: x, y: v.minY + 20), vertical: true, length: v.height - size.height - 40)
         case .free(let p):
             guard world.screens.contains(where: { $0.frame.insetBy(dx: -size.width, dy: -size.height).contains(p) }) else { return nil }
-            return Ledge(start: CGPoint(x: p.x - 14, y: p.y), vertical: false, length: 28)
+            return Ledge(start: CGPoint(x: p.x - 30, y: p.y), vertical: false, length: 60)
         }
     }
 
@@ -247,7 +363,7 @@ final class PetModel: ObservableObject {
             if world.screens.contains(where: { $0.frame.contains(CGPoint(x: p.x + Self.size.width / 2, y: p.y + 1)) }) { return p }
         }
         let v = (world.screens.first ?? NSScreen.main!).visibleFrame
-        return CGPoint(x: v.maxX - Self.size.width * 0.55, y: v.minY + v.height * 0.3)
+        return CGPoint(x: v.maxX - Self.size.width - 80, y: v.minY)
     }
 
     private func settle(at point: CGPoint, _ world: World) {
@@ -272,24 +388,43 @@ final class PetModel: ObservableObject {
             offset = point.x - v.minX
         } else {
             surface = .free(point)
-            offset = 14
+            offset = 30
         }
-        shuffleTo = nil
+        motion = .still
         if let ledge = ledge(for: surface!, world) {
             offset = ledge.clamp(offset)
             position = ledge.point(offset)
         }
     }
 
+    func click() {
+        let now = Date()
+        pokes = pokes.filter { now.timeIntervalSince($0) < 4 } + [now]
+        if pokes.count >= 3 {
+            pokes = []
+            bubbleOpen = false
+            annoyedUntil = now.addingTimeInterval(3)
+            quip = nil
+            say(Quips.poked.randomElement()!, for: 2.4)
+            return
+        }
+        if !bubbleOpen, toast == nil, greeting == nil, let digest, digest.insights.isEmpty, digest.sources.contains(where: \.ok) {
+            say(Quips.quiet.randomElement()!, for: 2.6)
+            return
+        }
+        toggleBubble()
+    }
+
     func toggleBubble() {
         toast = nil
         greeting = nil
+        quip = nil
         pendingToast = nil
         bubbleOpen.toggle()
         if bubbleOpen {
             markAllSeen()
             if mode == .sleep || mode == .alert { mode = .rest }
-            shuffleTo = nil
+            motion = .still
         } else if mode == .alert {
             mode = .rest
         }
@@ -299,7 +434,8 @@ final class PetModel: ObservableObject {
         bubbleOpen = false
         toast = nil
         greeting = nil
-        shuffleTo = nil
+        quip = nil
+        motion = .still
         walking = false
         relocateStart = nil
         opacity = 1
@@ -310,7 +446,9 @@ final class PetModel: ObservableObject {
         mode = .rest
         settle(at: position, world)
         UserDefaults.standard.set([Double(position.x), Double(position.y)], forKey: Self.homeKey)
-        nextShuffle = Date().addingTimeInterval(.random(in: 35...80))
+        placedUntil = Date().addingTimeInterval(600)
+        annoyedUntil = Date().addingTimeInterval(2)
+        say(Quips.dropped.randomElement()!, for: 2.2)
     }
 
     func refresh(force: Bool = false) {
@@ -352,6 +490,7 @@ final class PetModel: ObservableObject {
     }
 
     private func show(_ insight: Insight) {
+        quip = nil
         toast = insight
         toastUntil = Date().addingTimeInterval(insight.priority == 1 ? 14 : 8)
         toastStart = Date()
