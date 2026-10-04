@@ -31,12 +31,26 @@ export interface Insight {
   url?: string;
 }
 
+export interface Upcoming {
+  id: string;
+  what: string;
+  when: string;
+  whenText: string;
+  who?: string;
+  chat?: string;
+  source: SourceId;
+  ref?: string;
+  addedAt: number;
+  updatedAt: number;
+}
+
 export interface Digest {
   generatedAt: number;
   hash: string;
   headline: string;
   summary: string;
   insights: Insight[];
+  upcoming?: Upcoming[];
   sources: { source: SourceId; ok: boolean; error?: string; count: number }[];
   usage?: { model: string; tokensIn: number; tokensOut: number };
 }
