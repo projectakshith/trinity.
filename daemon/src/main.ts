@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
-import { daemonToken, ensureHome, HOST, loadConfig, PORT } from './config';
+import { daemonToken, ensureHome, HOST, loadConfig, PORT, writeJson } from './config';
 import { buildDigest, cachedDigest } from './digest';
+import { setStatus, upcoming, type UpcomingStatus } from './memory';
 import { googleAuthUrl, googleCallback, googleLinked } from './sources/google';
 import type { Digest } from './types';
 
@@ -109,6 +110,18 @@ Bun.serve({
       } catch (err) {
         return json(req, { digest: cachedDigest(), error: (err as Error).message }, 502);
       }
+    }
+
+    const upcomingMatch = /^\/upcoming\/([a-f0-9]{6,32})$/u.exec(url.pathname);
+    if (upcomingMatch && req.method === 'POST') {
+      const body = (await req.json().catch(() => ({}))) as { status?: string };
+      const status = body.status as UpcomingStatus;
+      if (status !== 'remind' && status !== 'skip' && status !== 'pending') return json(req, { error: 'bad status' }, 400);
+      if (!setStatus(upcomingMatch[1], status)) return json(req, { error: 'not found' }, 404);
+      const cached = cachedDigest();
+      const digest = cached ? { ...cached, upcoming: upcoming() } : null;
+      if (digest) writeJson('digest.json', digest);
+      return json(req, { digest, error: null });
     }
 
     if (url.pathname === '/status') {

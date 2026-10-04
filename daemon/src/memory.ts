@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { readJson, writeJson } from './config';
 import type { SourceItem, SourceId, Upcoming } from './types';
 
+export type UpcomingStatus = Upcoming['status'];
+
 const FILE = 'memory.json';
 const UNDATED_DAYS = 7;
 const MAX_ITEMS = 60;
@@ -26,7 +28,7 @@ export function parseWhen(when: string): Date | null {
 }
 
 function load(): Upcoming[] {
-  return readJson<{ items: Upcoming[] }>(FILE)?.items ?? [];
+  return (readJson<{ items: Upcoming[] }>(FILE)?.items ?? []).map((i) => ({ ...i, status: i.status ?? 'pending' }));
 }
 
 function alive(item: Upcoming, now: Date): boolean {
@@ -44,15 +46,29 @@ function sortKey(item: Upcoming): number {
   return parseWhen(item.when)?.getTime() ?? Number.MAX_SAFE_INTEGER;
 }
 
-export function upcoming(now = new Date()): Upcoming[] {
+function everything(now: Date): Upcoming[] {
   const items = load();
   const live = items.filter((i) => alive(i, now)).sort((a, b) => sortKey(a) - sortKey(b));
   if (live.length !== items.length) writeJson(FILE, { items: live });
   return live;
 }
 
+export function upcoming(now = new Date()): Upcoming[] {
+  return everything(now).filter((i) => i.status !== 'skip');
+}
+
+export function setStatus(id: string, status: UpcomingStatus): boolean {
+  const items = load();
+  const item = items.find((i) => i.id === id);
+  if (!item) return false;
+  item.status = status;
+  item.updatedAt = Date.now();
+  writeJson(FILE, { items });
+  return true;
+}
+
 export function remember(raw: RawUpcoming[], sources: Map<string, SourceItem>, now = new Date()): Upcoming[] {
-  const items = upcoming(now);
+  const items = everything(now);
   for (const r of raw) {
     const what = String(r.what ?? '').trim().slice(0, 90);
     if (!what) continue;
@@ -68,6 +84,7 @@ export function remember(raw: RawUpcoming[], sources: Map<string, SourceItem>, n
         existing.when = when;
         existing.whenText = String(r.whenText ?? '').slice(0, 60);
         existing.updatedAt = now.getTime();
+        if (existing.status === 'remind') existing.status = 'pending';
       }
       continue;
     }
@@ -80,6 +97,7 @@ export function remember(raw: RawUpcoming[], sources: Map<string, SourceItem>, n
       chat: source?.from,
       source: (source?.source ?? 'whatsapp') as SourceId,
       ref: source?.ref,
+      status: 'pending',
       addedAt: now.getTime(),
       updatedAt: now.getTime(),
     };
@@ -87,5 +105,5 @@ export function remember(raw: RawUpcoming[], sources: Map<string, SourceItem>, n
   }
   const next = items.sort((a, b) => sortKey(a) - sortKey(b)).slice(0, MAX_ITEMS);
   writeJson(FILE, { items: next });
-  return next;
+  return next.filter((i) => i.status !== 'skip');
 }

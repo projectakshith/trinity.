@@ -40,6 +40,7 @@ export interface Upcoming {
   chat?: string;
   source: SourceId;
   ref?: string;
+  status: 'pending' | 'remind' | 'skip';
   addedAt: number;
   updatedAt: number;
 }
