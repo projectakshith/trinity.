@@ -13,6 +13,8 @@
   --accent-fg: #faf9f6;
   --signal: #3f7d4a;
   --signal-bg: rgb(63 125 74 / 0.09);
+  --ember: #d4572b;
+  --blue: #3b6fd4;
   --green: #3f8a3a;
   --amber: #b7791f;
   --red: #c2412d;
@@ -50,6 +52,8 @@
   --accent-fg: #161615;
   --signal: #8fcf8a;
   --signal-bg: rgb(143 207 138 / 0.1);
+  --ember: #ff7a52;
+  --blue: #73a8ff;
   --green: #7cc36a;
   --amber: #e0a854;
   --red: #ef7d68;

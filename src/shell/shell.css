@@ -93,6 +93,8 @@
 
 .status-glyph.wait { color: var(--amber); }
 
+.status-glyph.ember { color: var(--ember); }
+
 .soon {
   font-size: 10.5px;
   font-weight: 500;

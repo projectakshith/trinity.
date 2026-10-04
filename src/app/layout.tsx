@@ -8,6 +8,7 @@ import '@/ui/ui.css';
 import '@/shell/shell.css';
 import '@/home/home.css';
 import '@/tools/morpheus/morpheus.css';
+import '@/tools/brief/brief.css';
 
 const serif = Instrument_Serif({ weight: '400', style: ['normal', 'italic'], subsets: ['latin'], variable: '--font-serif' });
 const sans = Afacad({ subsets: ['latin'], variable: '--font-sans' });

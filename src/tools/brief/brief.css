@@ -1,0 +1,100 @@
+.brief { padding-top: clamp(28px, 8vh, 80px); padding-bottom: 72px; }
+
+.brief-title {
+  margin: 10px 0 0;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(34px, 5vw, 48px);
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+}
+
+.brief-error { margin: 14px 0 0; font-size: 14px; color: var(--text-3); }
+
+.brief-summary {
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.brief-summary li { display: flex; gap: 10px; }
+
+.brief-summary li::before { content: '◇'; color: var(--text-3); font-size: 11px; line-height: 2.2; }
+
+.brief-group { margin-top: 40px; }
+
+.brief-group h2 { margin: 0 0 12px; display: flex; gap: 8px; }
+
+.brief-group .count { color: var(--text-2); }
+
+.insight-list { border: 1px solid var(--border); border-radius: 16px; background: var(--surface); overflow: hidden; }
+
+.insight { display: flex; gap: 14px; padding: 15px 18px; transition: background 0.15s; }
+
+.insight + .insight { border-top: 1px solid var(--border); }
+
+a.insight:hover { background: var(--hover); }
+
+.insight-glyph { flex-shrink: 0; width: 14px; text-align: center; font-size: 13px; line-height: 1.6; color: var(--text-3); }
+
+.insight-glyph.ember { color: var(--ember); }
+
+.insight-glyph.blue { color: var(--blue); }
+
+.insight-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+.insight-title { font-size: 16px; font-weight: 500; line-height: 1.35; }
+
+.insight-detail { font-size: 14.5px; line-height: 1.5; color: var(--text-2); }
+
+.insight-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12.5px; color: var(--text-3); }
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: var(--hover);
+  border: 1px solid var(--border);
+}
+
+.pill.ember { color: var(--ember); background: color-mix(in srgb, var(--ember) 12%, transparent); border-color: color-mix(in srgb, var(--ember) 22%, transparent); }
+
+.pill.blue { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, transparent); border-color: color-mix(in srgb, var(--blue) 22%, transparent); }
+
+.source-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.source-chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font-size: 13.5px; color: var(--text-2); }
+
+.source-chip .glyph { font-size: 11px; color: var(--text-3); }
+
+.source-chip.ok .glyph { color: var(--signal); }
+
+.brief-card { display: flex; flex-direction: column; gap: 14px; padding: 20px 22px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); transition: border-color 0.15s; }
+
+.brief-card:hover { border-color: var(--border-strong); }
+
+.brief-headline { margin: 0; font-family: var(--serif); font-size: 25px; line-height: 1.2; letter-spacing: -0.01em; }
+
+.brief-mini { display: flex; flex-direction: column; gap: 7px; }
+
+.brief-mini-row { display: flex; gap: 10px; align-items: baseline; font-size: 15px; color: var(--text-2); }
+
+.brief-mini-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.brief-more { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-3); }
+
+.brief-card:hover .brief-more { color: var(--text); }
+
+@media (max-width: 860px) {
+  .insight { padding: 14px; }
+}
