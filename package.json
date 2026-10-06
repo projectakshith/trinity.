@@ -6,20 +6,26 @@
   "scripts": {
     "dev": "next dev -p 6070",
     "build": "next build",
+    "android:sync": "next build && cap sync android",
+    "android:apk": "cd android && ./gradlew assembleDebug",
+    "android:open": "cap open android",
     "start": "npx serve out -l 6070 -s",
     "typecheck": "tsc --noEmit",
     "daemon": "cd daemon && bun start",
     "pet": "cd pet && swift run -c release TrinityPet"
   },
   "dependencies": {
+    "@capacitor/android": "^8",
+    "@capacitor/core": "^8",
     "dompurify": "^3.4.16",
     "marked": "^18.0.14",
-    "morpheus": "link:morpheus",
+    "morpheus": "github:projectakshith/morpheus#edeb240ce72d32ec504f6f05bb914fb9dc0e6daa",
     "next": "^16.3.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8",
     "@types/node": "^22.13.9",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

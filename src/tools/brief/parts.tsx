@@ -13,7 +13,7 @@ const TONES = {
   3: { glyph: glyphs.chip, label: 'FYI', tone: 'muted' },
 } as const;
 
-const SOURCES: Record<string, string> = { whatsapp: 'WhatsApp', mail: 'Mail', calendar: 'Calendar', trinity: 'Trinity' };
+const SOURCES: Record<string, string> = { whatsapp: 'WhatsApp', mail: 'Mail', calendar: 'Calendar', trinity: 'Trinity', nptel: 'NPTEL' };
 
 export function sourceName(source: string): string {
   return SOURCES[source] ?? source;

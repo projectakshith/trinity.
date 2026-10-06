@@ -1,4 +1,5 @@
 import { readStorage, writeStorage } from '@/lib/storage';
+import { Capacitor } from '@capacitor/core';
 
 export interface DaemonLink {
   url: string;
@@ -34,6 +35,7 @@ export function linkFromLocation(): DaemonLink | null {
 }
 
 export function defaultDaemonUrl(): string {
+  if (Capacitor.isNativePlatform()) return '';
   const host = window.location.hostname && window.location.hostname !== 'localhost' ? window.location.hostname : '127.0.0.1';
   return `ws://${host}:7878`;
 }

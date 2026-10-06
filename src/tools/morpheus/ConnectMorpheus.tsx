@@ -51,14 +51,12 @@ export function ConnectMorpheus({ initial, onConnect }: { initial: DaemonLink | 
             Run <code>morpheus serve</code> on your laptop.
           </li>
           <li>Paste the address and token it prints.</li>
-          <li>
-            From your phone, start it with <code>--host 0.0.0.0</code> or your Tailscale IP.
-          </li>
+          <li>On Android, use a private <code>wss://</code> address, such as one from Tailscale Serve.</li>
         </ol>
         <div className="connect-fields">
           <label className="field">
             <span>Address</span>
-            <input value={url} onChange={onUrl} placeholder="ws://100.x.y.z:7878" spellCheck={false} autoCapitalize="off" inputMode="url" />
+            <input value={url} onChange={onUrl} placeholder="wss://mac.your-tailnet.ts.net:7878" spellCheck={false} autoCapitalize="off" inputMode="url" />
           </label>
           <label className="field">
             <span>Token</span>
