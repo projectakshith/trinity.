@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 
 final class PetPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    var allowKey = false
+    override var canBecomeKey: Bool { allowKey }
     override var canBecomeMain: Bool { false }
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
@@ -48,6 +49,7 @@ final class PetController: NSObject {
     private var lastDX: CGFloat = 0
     private var pendingClick: DispatchWorkItem?
     private var activity: NSObjectProtocol?
+    private var previousApp: NSRunningApplication?
 
     override init() {
         panel = PetPanel(contentRect: NSRect(origin: .zero, size: windowSize), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -163,6 +165,18 @@ final class PetController: NSObject {
         if let text = model.greeting ?? model.quip, layout.frozenText != text { layout.frozenText = text }
         if let toast = model.toast, layout.frozenToast != toast { layout.frozenToast = toast }
         if let question = model.question, layout.frozenQuestion != question { layout.frozenQuestion = question }
+        if let plan = model.checkingIn, layout.frozenPlan != plan { layout.frozenPlan = plan }
+        let wantsKey = model.chatting || model.bubbleKind == .full
+        if panel.allowKey != wantsKey {
+            panel.allowKey = wantsKey
+            if wantsKey {
+                previousApp = NSWorkspace.shared.frontmostApplication
+                panel.makeKey()
+            } else {
+                if panel.isKeyWindow { previousApp?.activate() }
+                previousApp = nil
+            }
+        }
         let showingBubble = model.bubbleKind != nil
         let ignore = !(showingBubble || pressing || creatureRect.contains(NSEvent.mouseLocation))
         if panel.ignoresMouseEvents != ignore { panel.ignoresMouseEvents = ignore }
@@ -232,6 +246,8 @@ final class PetController: NSObject {
     func handleRightMouseDown(_ event: NSEvent, in view: NSView) -> Bool {
         guard creatureRect.contains(NSEvent.mouseLocation) else { return false }
         let menu = NSMenu()
+        menu.addItem(item("Talk to Trinity", #selector(talk)))
+        menu.addItem(item("Plan my day again", #selector(replan)))
         menu.addItem(item("Refresh insights", #selector(refreshNow)))
         menu.addItem(item("Open Trinity", #selector(openTrinity)))
         menu.addItem(item("Hide for an hour", #selector(hideForAnHour)))
@@ -248,6 +264,10 @@ final class PetController: NSObject {
     }
 
     @objc private func refreshNow() { model.refresh(force: true) }
+
+    @objc private func talk() { model.openChat() }
+
+    @objc private func replan() { model.replan() }
 
     @objc private func openTrinity() { open("http://localhost:6070/brief/") }
 

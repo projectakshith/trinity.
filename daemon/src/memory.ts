@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readJson, writeJson } from './config';
-import type { SourceItem, SourceId, Upcoming } from './types';
+import type { SourceItem, Upcoming } from './types';
 
 export type UpcomingStatus = Upcoming['status'];
 
@@ -67,7 +67,7 @@ export function setStatus(id: string, status: UpcomingStatus): boolean {
   return true;
 }
 
-export function remember(raw: RawUpcoming[], sources: Map<string, SourceItem>, now = new Date()): Upcoming[] {
+export function remember(raw: RawUpcoming[], sources: Map<string, SourceItem>, now = new Date(), fallback: Upcoming['source'] = 'whatsapp'): Upcoming[] {
   const items = everything(now);
   for (const r of raw) {
     const what = String(r.what ?? '').trim().slice(0, 90);
@@ -95,7 +95,7 @@ export function remember(raw: RawUpcoming[], sources: Map<string, SourceItem>, n
       whenText: String(r.whenText ?? '').slice(0, 60),
       who: String(r.who ?? '').trim() || source?.from,
       chat: source?.from,
-      source: (source?.source ?? 'whatsapp') as SourceId,
+      source: source?.source ?? fallback,
       ref: source?.ref,
       status: 'pending',
       addedAt: now.getTime(),
@@ -106,4 +106,17 @@ export function remember(raw: RawUpcoming[], sources: Map<string, SourceItem>, n
   const next = items.sort((a, b) => sortKey(a) - sortKey(b)).slice(0, MAX_ITEMS);
   writeJson(FILE, { items: next });
   return next.filter((i) => i.status !== 'skip');
+}
+
+export function commit(raw: RawUpcoming[], now = new Date()): Upcoming[] {
+  remember(raw, new Map(), now, 'trinity');
+  const keys = new Set(raw.map((r) => norm(String(r.what ?? ''))).filter(Boolean));
+  const items = load();
+  for (const item of items) {
+    if (!keys.has(norm(item.what))) continue;
+    item.status = 'remind';
+    item.updatedAt = now.getTime();
+  }
+  writeJson(FILE, { items });
+  return upcoming(now);
 }

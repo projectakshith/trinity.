@@ -59,7 +59,13 @@ private enum Quips {
     static let thrown = ["Rude.", "Nice throw. Idiot.", "I will remember this.", "Ow. Dramatically."]
     static let shaken = ["I hate you.", "Everything's spinning. Thanks.", "Never. Again."]
     static let trick = ["Watch this.", "Obviously.", "You're welcome.", "Free show. Once."]
-    static let quiet = ["Nothing for you. Go build something.", "All quiet. Don't make it weird.", "I'm busy. You're fine.", "What do you want?"]
+}
+
+struct ChatLine: Identifiable, Equatable {
+    let id = UUID()
+    let mine: Bool
+    let text: String
+    let at: Date
 }
 
 @MainActor
@@ -87,6 +93,12 @@ final class PetModel: ObservableObject {
     @Published var attire = Attire()
     @Published var beat: CGFloat = 0
     @Published var flying = false
+    @Published var chatting = false
+    @Published var chatLog: [ChatLine] = []
+    @Published var draft = ""
+    @Published var asking = false
+    @Published var checkingIn: Plan?
+    @Published var checks: [Bool] = []
 
     var position = CGPoint(x: 400, y: 0)
     private var surface: Surface?
@@ -114,12 +126,30 @@ final class PetModel: ObservableObject {
     private static let homeKey = "home"
     private static let remindedKey = "remindedUpcoming"
     private static let askedKey = "askedUpcoming"
+    private static let planShownKey = "planShown"
+    private static let nudgedKey = "nudged"
     private var questionUntil = Date.distantPast
     private var bitStart = Date()
     private var nextBit = Date().addingTimeInterval(.random(in: 8...20))
     private var nextLine = Date().addingTimeInterval(.random(in: 300...600))
     private var recentLines: [String] = []
-    private var grump = 0
+    private var bond = Bond.load()
+    private var bondSaved = Date()
+    private var grump: Int {
+        get { bond.grump }
+        set { bond.grump = newValue }
+    }
+    private var away = false
+    private var lastApp = ""
+    private var lastKind = AppKind.other
+    private var switches: [Date] = []
+    private var lastEvent = Date.distantPast
+    private var cooldowns: [String: Date] = [:]
+    private var wasLowBattery = false
+    private var wasOnline = true
+    private var lastPlanCheck = Date.distantPast
+    private var lastCheckinAsk = Date.distantPast
+    private var lastWarmth = Date.distantPast
     private var grumpDecay = Date().addingTimeInterval(1800)
     private var lastBlush = Date.distantPast
     private var toastOpened = false
@@ -138,10 +168,12 @@ final class PetModel: ObservableObject {
     }
 
     var bubbleKind: BubbleKind? {
+        if chatting { return .chat }
         if greeting != nil { return .greeting }
         if quip != nil { return .quip }
         if toast != nil { return .toast }
         if question != nil { return .ask }
+        if checkingIn != nil { return .checkin }
         if bubbleOpen { return .full }
         return nil
     }
@@ -153,11 +185,12 @@ final class PetModel: ObservableObject {
     var expression: Expression {
         if mode == .held || flying { return .flustered }
         if mode == .sleep { return .asleep }
+        if chatting && asking { return .thinking }
         if error != nil && digest == nil { return .glitch }
         if toast != nil || greeting != nil || mode == .alert { return .alert }
         if Date() < annoyedUntil { return .annoyed }
         if refreshing { return .thinking }
-        if bubbleOpen || quip != nil || question != nil { return .talking }
+        if bubbleOpen || chatting || quip != nil || question != nil || checkingIn != nil { return .talking }
         if attention > 0 { return .focused }
         if let digest, digest.insights.isEmpty, digest.sources.contains(where: \.ok) { return .chill }
         return grump >= 2 ? .annoyed : .neutral
@@ -168,7 +201,7 @@ final class PetModel: ObservableObject {
         phase += dt
         context = world.context
         updateTimers(now)
-        updateLife(now, world)
+        updateLife(now, world, dt)
         if mode == .held { return }
 
         if case .flight(let v) = motion {
@@ -176,7 +209,7 @@ final class PetModel: ObservableObject {
             return
         }
 
-        if mode != .alert && !bubbleOpen {
+        if mode != .alert && !bubbleOpen && !chatting {
             if world.userIdle > sleepAfter && mode != .sleep { mode = .sleep }
             else if mode == .sleep && world.userIdle < 2 { mode = .rest }
         }
@@ -212,7 +245,7 @@ final class PetModel: ObservableObject {
         walking = { if case .walk = motion { return true } else { return false } }()
 
         track(world, now, dt)
-        if bubbleOpen || mode != .rest { return }
+        if bubbleOpen || chatting || checkingIn != nil || mode != .rest { return }
 
         let typing = world.keyIdle < 3
         guard case .still = motion, !typing, now >= placedUntil else { return }
@@ -246,7 +279,7 @@ final class PetModel: ObservableObject {
         if mode == .rest && !bubbleOpen && dist < 95 {
             if hoverSince == nil { hoverSince = now }
             let hovered = now.timeIntervalSince(hoverSince!)
-            if hovered > 0.8 && hovered < 2.6 && bit == nil && now.timeIntervalSince(lastBlush) > 600 {
+            if hovered > 0.8 && hovered < 2.6 && bit == nil && now.timeIntervalSince(lastBlush) > (bond.affection >= 6 ? 240 : 600) {
                 lastBlush = now
                 play(.blush, now)
             }
@@ -297,7 +330,7 @@ final class PetModel: ObservableObject {
         }
     }
 
-    private func updateLife(_ now: Date, _ world: World) {
+    private func updateLife(_ now: Date, _ world: World, _ dt: Double) {
         let next = Attire(hood: context.evening, headphones: context.audio, dim: context.lateNight)
         if attire != next { attire = next }
         let pulse: CGFloat = context.audio && mode == .rest && bubbleKind == nil ? (sin(phase * 2 * .pi * 1.9) > 0.3 ? 1 : 0) : 0
@@ -318,14 +351,161 @@ final class PetModel: ObservableObject {
             nextBit = now.addingTimeInterval(.random(in: 18...45))
             play(pickBit(world), now)
         }
+        if context.app == .coding && world.userIdle < 60 { bond.coding[Bond.day(), default: 0] += dt }
+        if now.timeIntervalSince(bondSaved) > 30 {
+            bondSaved = now
+            bond.save()
+        }
+        events(now, world)
+        planDuties(now, world)
+
         if calm && now >= nextLine && world.keyIdle > 5 {
-            nextLine = now.addingTimeInterval(.random(in: 1200...2400))
-            let options = Lines.ambient(context: context, digest: digest, grump: grump).filter { !recentLines.contains($0) }
+            nextLine = now.addingTimeInterval(.random(in: 480...900))
+            let options = Lines.ambient(context: context, digest: digest, grump: grump, bond: bond).filter { !recentLines.contains($0) }
             if let line = options.randomElement() {
                 recentLines = Array((recentLines + [line]).suffix(8))
                 say(line, for: 3.5)
             }
         }
+    }
+
+    private func events(_ now: Date, _ world: World) {
+        if world.userIdle > 900 {
+            away = true
+        } else if away && world.userIdle < 2 {
+            away = false
+            react("back", ["Oh. You're back.", "Took you long enough.", "Missed me? Don't answer."], cooldown: 1800, now)
+        }
+        if context.appName != lastApp {
+            if !lastApp.isEmpty {
+                switches = switches.filter { now.timeIntervalSince($0) < 180 } + [now]
+                if context.app == .video && lastKind == .coding { react("break", ["Break? Ten minutes. I'm counting.", "Oh, we're watching stuff now."], cooldown: 2400, now) }
+                if switches.count >= 12 {
+                    switches = []
+                    react("switch", ["Pick one app. Any app.", "Focus. Look it up."], cooldown: 1200, now)
+                }
+            }
+            lastApp = context.appName
+            lastKind = context.app
+        }
+        if wasLowBattery && context.charging { react("charge", ["Better.", "Finally. Power."], cooldown: 1800, now) }
+        wasLowBattery = context.lowBattery
+        if !wasOnline && context.online { react("online", ["Wi-Fi's back. You're welcome."], cooldown: 900, now) }
+        wasOnline = context.online
+    }
+
+    private func react(_ id: String, _ lines: [String], cooldown: TimeInterval, _ now: Date) {
+        guard now.timeIntervalSince(lastEvent) > 60, now >= cooldowns[id, default: .distantPast], bubbleKind == nil, mode != .held, !flying else { return }
+        lastEvent = now
+        cooldowns[id] = now.addingTimeInterval(cooldown)
+        say(lines.randomElement()!, for: 2.8)
+    }
+
+    private func planDuties(_ now: Date, _ world: World) {
+        guard now.timeIntervalSince(lastPlanCheck) > 15 else { return }
+        lastPlanCheck = now
+        guard let plan = digest?.plan, plan.date == Bond.day(), bubbleKind == nil, mode == .rest, !flying, world.userIdle < 120 else { return }
+        var nudged = Set(UserDefaults.standard.stringArray(forKey: Self.nudgedKey) ?? [])
+        for nudge in plan.nudges {
+            guard let at = plan.time(nudge.at), now >= at, now.timeIntervalSince(at) < 1200 else { continue }
+            let key = "\(plan.date) \(nudge.at)"
+            guard !nudged.contains(key) else { continue }
+            nudged.insert(key)
+            UserDefaults.standard.set(Array(nudged.suffix(60)), forKey: Self.nudgedKey)
+            say(nudge.text, for: 6)
+            return
+        }
+        if plan.done == nil, let at = plan.time(plan.checkinAt), now >= at, now.timeIntervalSince(lastCheckinAsk) > 3600 {
+            lastCheckinAsk = now
+            checks = plan.focus.map { _ in false }
+            checkingIn = plan
+            motion = .still
+        }
+    }
+
+    func submitCheckin() {
+        guard let plan = checkingIn else { return }
+        let done = plan.focus.indices.map { checks.indices.contains($0) && checks[$0] }
+        checkingIn = nil
+        let count = done.filter { $0 }.count
+        bond.affection = min(10, bond.affection + (count == done.count ? 2 : count > 0 ? 1 : 0))
+        grump = max(0, grump - 1)
+        bond.save()
+        let line: String
+        if count == done.count { line = ["Look at you. Proud. Slightly.", "All of it. Who are you.", "Fine. Impressive."].randomElement()! }
+        else if count == 0 { line = ["Zero. Bold. Tomorrow you're mine.", "Nothing? Noted. Tomorrow.", "Wow. Okay. Tomorrow, then."].randomElement()! }
+        else { line = "\(count) of \(done.count). Tomorrow, the rest." }
+        say(line, for: 3)
+        Task {
+            if let next = try? await Daemon.checkin(done) { digest = next }
+        }
+    }
+
+    func openChat() {
+        pendingToast = nil
+        toast = nil
+        greeting = nil
+        quip = nil
+        question = nil
+        checkingIn = nil
+        bubbleOpen = false
+        bit = nil
+        motion = .still
+        if mode == .sleep || mode == .alert { mode = .rest }
+        if let last = chatLog.last, Date().timeIntervalSince(last.at) > 3 * 3600 { chatLog = [] }
+        chatting = true
+    }
+
+    func closeChat() {
+        chatting = false
+    }
+
+    func send() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !asking else { return }
+        if !chatting { openChat() }
+        draft = ""
+        chatLog.append(ChatLine(mine: true, text: text, at: Date()))
+        asking = true
+        if Date().timeIntervalSince(lastWarmth) > 600 {
+            lastWarmth = Date()
+            bond.affection = min(10, bond.affection + 1)
+            grump = max(0, grump - 1)
+        }
+        let laptop = laptopSummary()
+        Task {
+            do {
+                let (reply, next) = try await Daemon.ask(text, laptop: laptop)
+                chatLog.append(ChatLine(mine: false, text: reply, at: Date()))
+                if let next { digest = next }
+            } catch {
+                chatLog.append(ChatLine(mine: false, text: "Brain's offline. \(error.localizedDescription)", at: Date()))
+            }
+            asking = false
+        }
+    }
+
+    func replan() {
+        say("Fine. Rethinking your day.", for: 2.5)
+        Task {
+            if let next = try? await Daemon.replan() {
+                digest = next
+                if let plan = next.plan, !plan.focus.isEmpty { UserDefaults.standard.removeObject(forKey: Self.planShownKey); apply(next) }
+            }
+        }
+    }
+
+    private func laptopSummary() -> String {
+        let now = Date()
+        var parts: [String] = []
+        if !context.appName.isEmpty { parts.append("In \(context.appName) for \(Int(now.timeIntervalSince(context.appSince) / 60)) min") }
+        let coded = bond.codingToday
+        if coded > 300 { parts.append("Coded \(Int(coded / 3600))h \(Int(coded.truncatingRemainder(dividingBy: 3600) / 60))m today") }
+        if let start = context.sessionStart { parts.append("At the laptop \(Int(now.timeIntervalSince(start) / 60)) min straight") }
+        if let battery = context.battery { parts.append("Battery \(battery)%\(context.charging ? " charging" : "")") }
+        if context.audio { parts.append("Audio playing") }
+        if !context.online { parts.append("Offline") }
+        return parts.joined(separator: ". ")
     }
 
     private func pickBit(_ world: World) -> Bit {
@@ -403,7 +583,7 @@ final class PetModel: ObservableObject {
     }
 
     private func say(_ line: String, for seconds: TimeInterval) {
-        guard greeting == nil, toast == nil, question == nil, !bubbleOpen else { return }
+        guard greeting == nil, toast == nil, question == nil, checkingIn == nil, !bubbleOpen, !chatting else { return }
         quip = line
         quipUntil = Date().addingTimeInterval(seconds)
     }
@@ -549,6 +729,10 @@ final class PetModel: ObservableObject {
     }
 
     func click() {
+        if chatting {
+            closeChat()
+            return
+        }
         let now = Date()
         pokes = pokes.filter { now.timeIntervalSince($0) < 4 } + [now]
         if pokes.count >= 3 {
@@ -559,14 +743,18 @@ final class PetModel: ObservableObject {
             say(Quips.poked.randomElement()!, for: 2.4)
             return
         }
-        if !bubbleOpen, toast == nil, greeting == nil, let digest, digest.insights.isEmpty, digest.sources.contains(where: \.ok) {
-            say(Quips.quiet.randomElement()!, for: 2.6)
-            return
-        }
         toggleBubble()
     }
 
     func dismissBubble() {
+        if chatting {
+            closeChat()
+            return
+        }
+        if checkingIn != nil {
+            checkingIn = nil
+            return
+        }
         if bubbleOpen {
             toggleBubble()
             return
@@ -580,6 +768,8 @@ final class PetModel: ObservableObject {
     }
 
     func toggleBubble() {
+        chatting = false
+        checkingIn = nil
         question = nil
         toast = nil
         greeting = nil
@@ -598,6 +788,8 @@ final class PetModel: ObservableObject {
     }
 
     func grab() {
+        chatting = false
+        checkingIn = nil
         bubbleOpen = false
         toast = nil
         greeting = nil
@@ -652,26 +844,58 @@ final class PetModel: ObservableObject {
     private func apply(_ next: Digest) {
         digest = next
         let fresh = next.insights.filter { $0.priority <= 2 && !seen.contains($0.id) }
-        let top = bubbleOpen ? nil : fresh.min(by: { $0.priority < $1.priority })
+        let busy = bubbleOpen || chatting || checkingIn != nil
+        let top = busy ? nil : fresh.min(by: { $0.priority < $1.priority })
+        let plan = busy ? nil : freshPlan(next)
         if let top {
             seen.insert(top.id)
             saveSeen()
         }
 
         let today = ISO8601DateFormatter.string(from: Date(), timeZone: .current, formatOptions: [.withFullDate])
-        if UserDefaults.standard.string(forKey: Self.greetingKey) != today && !bubbleOpen && mode != .held {
+        if UserDefaults.standard.string(forKey: Self.greetingKey) != today && !busy && mode != .held {
             UserDefaults.standard.set(today, forKey: Self.greetingKey)
             let name = NSFullUserName().split(separator: " ").first.map(String.init) ?? "Neo"
-            greeting = "Wake up, \(name)…"
+            let day = Bond.day()
+            let gap = bond.lastDay.isEmpty ? nil : Bond.gap(from: bond.lastDay, to: day)
+            if bond.lastDay != day {
+                bond.streak = gap == 1 ? bond.streak + 1 : 1
+                bond.lastDay = day
+                bond.save()
+            }
+            greeting = Lines.greeting(name: name, streak: bond.streak, gap: gap, hour: Calendar.current.component(.hour, from: Date()))
             greetingStart = Date()
             toastStart = Date()
-            pendingToast = top
+            if top == nil, let plan {
+                markShown(plan)
+                pendingToast = planInsight(plan)
+            } else {
+                pendingToast = top
+            }
             mode = .alert
             return
         }
         if let top { show(top); return }
+        if let plan {
+            markShown(plan)
+            show(planInsight(plan))
+            return
+        }
         if !bubbleOpen, let due = dueReminder(next) { show(due); return }
         if !bubbleOpen, question == nil, toast == nil, let ask = nextQuestion(next) { question = ask; questionUntil = Date().addingTimeInterval(30) }
+    }
+
+    private func freshPlan(_ digest: Digest) -> Plan? {
+        guard let plan = digest.plan, plan.date == Bond.day(), !plan.focus.isEmpty, UserDefaults.standard.string(forKey: Self.planShownKey) != plan.date else { return nil }
+        return plan
+    }
+
+    private func markShown(_ plan: Plan) {
+        UserDefaults.standard.set(plan.date, forKey: Self.planShownKey)
+    }
+
+    private func planInsight(_ plan: Plan) -> Insight {
+        Insight(id: "plan:\(plan.date)", source: "trinity", priority: 2, title: "Today: \(plan.focus[0])", detail: plan.focus.dropFirst().joined(separator: " · "), from: nil, chat: nil, group: nil, url: nil)
     }
 
     private func nextQuestion(_ digest: Digest) -> Upcoming? {

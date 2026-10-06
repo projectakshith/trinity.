@@ -16,6 +16,7 @@ export interface Config {
   dailyTokenBudget: number;
   ownerName: string;
   whatsapp: { mutedGroups: string[]; importantGroups: string[]; mutedChats: string[] };
+  mail: { mutedSenders: string[] };
   google?: { clientId: string; clientSecret: string };
   whatsappDb: string;
 }
@@ -27,6 +28,7 @@ const DEFAULTS: Config = {
   refreshMinutes: 30,
   dailyTokenBudget: 120_000,
   whatsapp: { mutedGroups: [], importantGroups: [], mutedChats: [] },
+  mail: { mutedSenders: [] },
   ownerName: 'Akshith',
   whatsappDb: join(homedir(), 'Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite'),
 };
@@ -60,6 +62,7 @@ export function loadConfig(): Config {
     google: user.google?.clientId && user.google.clientSecret ? user.google : undefined,
     groq: user.groq?.apiKey ? { apiKey: user.groq.apiKey, model: user.groq.model || 'openai/gpt-oss-120b' } : undefined,
     provider: user.provider === 'groq' && user.groq?.apiKey ? 'groq' : 'neo',
+    mail: { mutedSenders: user.mail?.mutedSenders ?? [] },
     whatsapp: { mutedGroups: user.whatsapp?.mutedGroups ?? [], importantGroups: user.whatsapp?.importantGroups ?? [], mutedChats: user.whatsapp?.mutedChats ?? [] },
   };
 }

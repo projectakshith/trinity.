@@ -1,4 +1,4 @@
-export type SourceId = 'mail' | 'whatsapp' | 'calendar';
+export type SourceId = 'mail' | 'whatsapp' | 'calendar' | 'nptel';
 
 export interface SourceItem {
   source: SourceId;
@@ -9,6 +9,9 @@ export interface SourceItem {
   text: string;
   unread?: boolean;
   url?: string;
+  address?: string;
+  bulk?: boolean;
+  folders?: string[];
 }
 
 export interface SourceResult {
@@ -38,7 +41,7 @@ export interface Upcoming {
   whenText: string;
   who?: string;
   chat?: string;
-  source: SourceId;
+  source: SourceId | 'trinity';
   ref?: string;
   status: 'pending' | 'remind' | 'skip';
   addedAt: number;

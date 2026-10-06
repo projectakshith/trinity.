@@ -39,6 +39,8 @@ enum BubbleKind: Equatable {
     case quip
     case toast
     case ask
+    case checkin
+    case chat
     case full
 }
 
@@ -60,6 +62,10 @@ struct PetBubble: View {
                     if let toast = model.toast ?? layout.frozenToast { InsightRow(insight: toast) }
                 case .ask:
                     if let item = model.question ?? layout.frozenQuestion { ask(item) }
+                case .checkin:
+                    if let plan = model.checkingIn ?? layout.frozenPlan { checkin(plan) }
+                case .chat:
+                    chat
                 case .full:
                     content
                 }
@@ -109,7 +115,60 @@ struct PetBubble: View {
         }
     }
 
+    private func checkin(_ plan: Plan) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(plan.checkin).font(Theme.serif(21, italic: true)).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
+            ForEach(Array(plan.focus.enumerated()), id: \.offset) { i, item in
+                let on = model.checks.indices.contains(i) && model.checks[i]
+                Button {
+                    if model.checks.indices.contains(i) { model.checks[i].toggle() }
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(on ? "◈" : "◇").font(Theme.sans(13)).foregroundStyle(on ? Theme.signal : Theme.text3).frame(width: 14)
+                        Text(item).font(Theme.sans(15, .medium)).foregroundStyle(on ? Theme.text : Theme.text2).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            HStack(spacing: 8) {
+                Button { model.submitCheckin() } label: { Text("That's what I did") }.buttonStyle(PillButton(primary: true))
+                Button { model.dismissBubble() } label: { Text("Later") }.buttonStyle(PillButton())
+            }
+            .padding(.top, 2)
+        }
+    }
+
+    private var chat: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if model.chatLog.isEmpty {
+                            Text("Go on. Ask.").font(Theme.serif(19, italic: true)).foregroundStyle(Theme.text2)
+                        }
+                        ForEach(model.chatLog) { line in ChatRow(line: line) }
+                        if model.asking {
+                            Text("…").font(Theme.serif(21, italic: true)).foregroundStyle(Theme.text3)
+                        }
+                        Color.clear.frame(height: 1).id("end")
+                    }
+                    .background(GeometryReader { g in Color.clear.preference(key: HeightKey.self, value: g.size.height) })
+                }
+                .frame(height: min(max(layout.chatHeight, 1), layout.listCap + 60))
+                .onPreferenceChange(HeightKey.self) { value in DispatchQueue.main.async { layout.chatHeight = value } }
+                .onChange(of: model.chatLog.count) { proxy.scrollTo("end", anchor: .bottom) }
+                .onChange(of: layout.chatHeight) { proxy.scrollTo("end", anchor: .bottom) }
+                .onAppear { proxy.scrollTo("end", anchor: .bottom) }
+            }
+            ChatField(model: model)
+        }
+    }
+
     private var stamp: String {
+        if model.chatting { return model.asking ? "thinking…" : "" }
+        if model.checkingIn != nil { return "check-in" }
         if model.refreshing { return "syncing…" }
         if model.toast != nil { return "new" }
         guard let digest = model.digest, model.greeting == nil, model.quip == nil else { return "" }
@@ -157,6 +216,20 @@ struct PetBubble: View {
                 Rectangle().fill(Theme.line).frame(height: 1)
                 InsightRow(insight: insight).padding(.vertical, 11)
             }
+            if let plan = digest.plan, plan.date == Bond.day(), !plan.focus.isEmpty {
+                Rectangle().fill(Theme.line).frame(height: 1)
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Today").font(Theme.sans(12, .semibold)).foregroundStyle(Theme.text3)
+                    ForEach(Array(plan.focus.enumerated()), id: \.offset) { i, item in
+                        let done = plan.done.map { $0.indices.contains(i) && $0[i] } ?? false
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(done ? "◈" : "◇").font(Theme.sans(13)).foregroundStyle(done ? Theme.signal : Theme.text3).frame(width: 14)
+                            Text(item).font(Theme.sans(14.5)).foregroundStyle(done ? Theme.text2 : Theme.text).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(.vertical, 11)
+            }
             if let upcoming = digest.upcoming, !upcoming.isEmpty {
                 Rectangle().fill(Theme.line).frame(height: 1)
                 VStack(alignment: .leading, spacing: 7) {
@@ -189,18 +262,76 @@ struct PetBubble: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
-            Button { model.refresh(force: true) } label: {
-                Text(model.refreshing ? "Refreshing…" : "Refresh")
+        VStack(alignment: .leading, spacing: 10) {
+            ChatField(model: model)
+            HStack(spacing: 8) {
+                Button { model.refresh(force: true) } label: {
+                    Text(model.refreshing ? "Refreshing…" : "Refresh")
+                }
+                .disabled(model.refreshing)
+                Button { open("http://localhost:6070/brief/") } label: { Text("Open Trinity") }
+                Spacer()
             }
-            .disabled(model.refreshing)
-            Button { open("http://localhost:6070/brief/") } label: { Text("Open Trinity") }
-            Spacer()
+            .buttonStyle(PillButton())
         }
-        .buttonStyle(PillButton())
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+}
+
+struct ChatRow: View {
+    let line: ChatLine
+
+    var body: some View {
+        if line.mine {
+            Text(line.text)
+                .font(Theme.sans(14.5))
+                .foregroundStyle(Theme.text2)
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        } else {
+            Text(line.text)
+                .font(Theme.serif(19, italic: true))
+                .foregroundStyle(Theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+struct ChatField: View {
+    @ObservedObject var model: PetModel
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField("", text: $model.draft, prompt: Text("Ask me anything…").foregroundStyle(Theme.text3))
+                .textFieldStyle(.plain)
+                .font(Theme.sans(15))
+                .foregroundStyle(Theme.text)
+                .focused($focused)
+                .onSubmit { model.send() }
+                .onKeyPress(.escape) {
+                    model.dismissBubble()
+                    return .handled
+                }
+            Button { model.send() } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Theme.surface)
+                    .frame(width: 22, height: 22)
+                    .background(model.draft.isEmpty || model.asking ? Theme.text3 : Theme.text, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(model.draft.isEmpty || model.asking)
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 5)
+        .padding(.vertical, 5)
+        .background(Theme.raised, in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.line))
+        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { focused = true } }
     }
 }
 
@@ -281,10 +412,12 @@ final class PetLayout: ObservableObject {
     @Published var above = true
     @Published var listHeight: CGFloat = 0
     @Published var listCap: CGFloat = 300
+    @Published var chatHeight: CGFloat = 0
     @Published var lastKind: BubbleKind = .full
     var frozenText = ""
     var frozenToast: Insight?
     var frozenQuestion: Upcoming?
+    var frozenPlan: Plan?
 }
 
 struct PetScene: View {

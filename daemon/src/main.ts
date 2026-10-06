@@ -2,17 +2,34 @@ import { timingSafeEqual } from 'node:crypto';
 import { daemonToken, ensureHome, HOST, loadConfig, PORT, writeJson } from './config';
 import { buildDigest, cachedDigest } from './digest';
 import { setStatus, upcoming, type UpcomingStatus } from './memory';
-import { googleAuthUrl, googleCallback, googleLinked } from './sources/google';
+import { checkin, ensurePlan, todayPlan } from './plan';
+import { ask } from './talk';
+import { googleAccounts, googleAuthUrl, googleCallback, googleLinked } from './sources/google';
 import type { Digest } from './types';
 
 ensureHome();
 const config = loadConfig();
 const token = daemonToken();
 const ALLOWED_HOSTS = new Set([`${HOST}:${PORT}`, `localhost:${PORT}`]);
-const ALLOWED_ORIGINS = new Set(['http://localhost:6070', 'http://127.0.0.1:6070']);
+const LOCAL_ORIGINS = new Set(['http://localhost:6070', 'http://127.0.0.1:6070']);
+const ALLOWED_ORIGINS = new Set([...LOCAL_ORIGINS, 'https://localhost', 'https://trinity-eosin.vercel.app']);
 
 let inflight: Promise<Digest> | null = null;
 let lastError: string | null = null;
+let planning: Promise<unknown> | null = null;
+
+function plan(force = false): void {
+  if (planning) return;
+  planning = ensurePlan(config, force)
+    .catch((err: Error) => console.error(`[trinityd] plan failed: ${err.message}`))
+    .finally(() => {
+      planning = null;
+    });
+}
+
+function withPlan(digest: Digest | null): (Digest & { plan: ReturnType<typeof todayPlan> }) | null {
+  return digest ? { ...digest, upcoming: upcoming(), plan: todayPlan() } : null;
+}
 
 function refresh(force = false): Promise<Digest> {
   if (inflight) return inflight;
@@ -20,6 +37,7 @@ function refresh(force = false): Promise<Digest> {
     .then((d) => {
       lastError = null;
       console.log(`[trinityd] digest ${new Date(d.generatedAt).toLocaleTimeString()} · ${d.insights.length} insights · ${d.sources.map((s) => `${s.source}:${s.ok ? s.count : 'off'}`).join(' ')}`);
+      plan();
       return d;
     })
     .catch((err: Error) => {
@@ -68,8 +86,8 @@ Bun.serve({
   idleTimeout: 120,
   async fetch(req) {
     const url = new URL(req.url);
-    if (!ALLOWED_HOSTS.has(req.headers.get('host') ?? '')) return new Response('bad host', { status: 421 });
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(req) });
+    if (!ALLOWED_HOSTS.has(req.headers.get('host') ?? '') && !authorized(req)) return new Response('bad host', { status: 421 });
 
     if (url.pathname === '/health') return json(req, { ok: true });
 
@@ -86,19 +104,19 @@ Bun.serve({
       try {
         const email = await googleCallback(config, code, state);
         void refresh(true).catch(() => undefined);
-        return page('Linked', `Trinity can now read mail and calendar for ${escapeHtml(email)}. You can close this tab.`);
+        return page('Linked', `Trinity can now read mail and calendar for ${escapeHtml(email)}. Linked: ${escapeHtml(googleAccounts().join(', '))}. To add another account, open <a href="/auth/google">this link</a> again.`);
       } catch (err) {
         return page('Sign-in failed', escapeHtml((err as Error).message));
       }
     }
 
-    if (!authorized(req) && !ALLOWED_ORIGINS.has(req.headers.get('origin') ?? '')) return json(req, { error: 'unauthorized' }, 401);
+    if (!authorized(req) && !LOCAL_ORIGINS.has(req.headers.get('origin') ?? '')) return json(req, { error: 'unauthorized' }, 401);
 
     if (url.pathname === '/digest' && req.method === 'GET') {
       const cached = cachedDigest();
-      if (cached) return json(req, { digest: cached, refreshing: Boolean(inflight), error: lastError });
+      if (cached) return json(req, { digest: withPlan(cached), refreshing: Boolean(inflight), error: lastError });
       try {
-        return json(req, { digest: await refresh(), refreshing: false, error: null });
+        return json(req, { digest: withPlan(await refresh()), refreshing: false, error: null });
       } catch (err) {
         return json(req, { digest: null, refreshing: false, error: (err as Error).message }, 502);
       }
@@ -106,9 +124,9 @@ Bun.serve({
 
     if (url.pathname === '/refresh' && req.method === 'POST') {
       try {
-        return json(req, { digest: await refresh(url.searchParams.get('force') === '1'), error: null });
+        return json(req, { digest: withPlan(await refresh(url.searchParams.get('force') === '1')), error: null });
       } catch (err) {
-        return json(req, { digest: cachedDigest(), error: (err as Error).message }, 502);
+        return json(req, { digest: withPlan(cachedDigest()), error: (err as Error).message }, 502);
       }
     }
 
@@ -121,11 +139,39 @@ Bun.serve({
       const cached = cachedDigest();
       const digest = cached ? { ...cached, upcoming: upcoming() } : null;
       if (digest) writeJson('digest.json', digest);
-      return json(req, { digest, error: null });
+      return json(req, { digest: withPlan(digest), error: null });
+    }
+
+    if (url.pathname === '/ask' && req.method === 'POST') {
+      const body = (await req.json().catch(() => ({}))) as { message?: string; laptop?: string };
+      const message = String(body.message ?? '').trim().slice(0, 600);
+      if (!message) return json(req, { error: 'empty message' }, 400);
+      try {
+        const answer = await ask(config, message, String(body.laptop ?? '').slice(0, 300));
+        return json(req, { ...answer, digest: withPlan(cachedDigest()), error: null });
+      } catch (err) {
+        return json(req, { reply: null, error: (err as Error).message }, 502);
+      }
+    }
+
+    if (url.pathname === '/plan' && req.method === 'POST') {
+      try {
+        await ensurePlan(config, true);
+        return json(req, { digest: withPlan(cachedDigest()), error: null });
+      } catch (err) {
+        return json(req, { digest: withPlan(cachedDigest()), error: (err as Error).message }, 502);
+      }
+    }
+
+    if (url.pathname === '/plan/checkin' && req.method === 'POST') {
+      const body = (await req.json().catch(() => ({}))) as { done?: unknown };
+      if (!Array.isArray(body.done)) return json(req, { error: 'bad done' }, 400);
+      if (!checkin(body.done.map(Boolean))) return json(req, { error: 'no plan today' }, 404);
+      return json(req, { digest: withPlan(cachedDigest()), error: null });
     }
 
     if (url.pathname === '/status') {
-      return json(req, { model: config.model, googleConfigured: Boolean(config.google), googleLinked: googleLinked(), refreshMinutes: config.refreshMinutes, lastError, digest: cachedDigest()?.sources ?? [] });
+      return json(req, { model: config.model, googleConfigured: Boolean(config.google), googleLinked: googleLinked(), googleAccounts: googleAccounts(), refreshMinutes: config.refreshMinutes, lastError, digest: cachedDigest()?.sources ?? [] });
     }
 
     return json(req, { error: 'not found' }, 404);

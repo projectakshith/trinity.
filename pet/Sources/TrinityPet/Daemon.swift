@@ -48,6 +48,27 @@ struct Upcoming: Codable, Identifiable, Equatable {
     }
 }
 
+struct Nudge: Codable, Equatable {
+    let at: String
+    let text: String
+}
+
+struct Plan: Codable, Equatable {
+    let date: String
+    let focus: [String]
+    let nudges: [Nudge]
+    let checkinAt: String
+    let checkin: String
+    let lines: [String]
+    let done: [Bool]?
+
+    func time(_ hhmm: String, on day: Date = Date()) -> Date? {
+        let parts = hhmm.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 2 else { return nil }
+        return Calendar.current.date(bySettingHour: parts[0], minute: parts[1], second: 0, of: day)
+    }
+}
+
 struct Digest: Codable, Equatable {
     let generatedAt: Double
     let headline: String
@@ -55,6 +76,13 @@ struct Digest: Codable, Equatable {
     let insights: [Insight]
     let upcoming: [Upcoming]?
     let sources: [SourceState]
+    let plan: Plan?
+}
+
+private struct AskResponse: Codable {
+    let reply: String?
+    let digest: Digest?
+    let error: String?
 }
 
 private struct DigestResponse: Codable {
@@ -86,16 +114,37 @@ struct Daemon {
         return try? JSONDecoder().decode(DaemonFile.self, from: data)
     }
 
-    static func setUpcoming(_ id: String, status: String) async throws -> Digest? {
+    private static func post(_ path: String, _ body: [String: Any], timeout: TimeInterval = 10) async throws -> Data {
         guard let file, let base = URL(string: file.url) else { throw DaemonError.notRunning }
-        var request = URLRequest(url: base.appendingPathComponent("upcoming/\(id)"))
+        var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "POST"
-        request.timeoutInterval = 10
+        request.timeoutInterval = timeout
         request.setValue("Bearer \(file.token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["status": status])
-        let (data, _) = try await URLSession.shared.data(for: request)
-        return try JSONDecoder().decode(DigestResponse.self, from: data).digest
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        do {
+            return try await URLSession.shared.data(for: request).0
+        } catch {
+            throw DaemonError.notRunning
+        }
+    }
+
+    static func setUpcoming(_ id: String, status: String) async throws -> Digest? {
+        try JSONDecoder().decode(DigestResponse.self, from: await post("upcoming/\(id)", ["status": status])).digest
+    }
+
+    static func ask(_ message: String, laptop: String) async throws -> (String, Digest?) {
+        let response = try JSONDecoder().decode(AskResponse.self, from: await post("ask", ["message": message, "laptop": laptop], timeout: 90))
+        guard let reply = response.reply else { throw DaemonError.message(response.error ?? "No answer") }
+        return (reply, response.digest)
+    }
+
+    static func replan() async throws -> Digest? {
+        try JSONDecoder().decode(DigestResponse.self, from: await post("plan", [:], timeout: 90)).digest
+    }
+
+    static func checkin(_ done: [Bool]) async throws -> Digest? {
+        try JSONDecoder().decode(DigestResponse.self, from: await post("plan/checkin", ["done": done])).digest
     }
 
     static func digest(refresh: Bool = false) async throws -> Digest {

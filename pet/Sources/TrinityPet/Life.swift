@@ -101,8 +101,53 @@ final class ContextSampler {
     }
 }
 
+struct Bond: Codable {
+    var affection = 3
+    var grump = 0
+    var lastDay = ""
+    var streak = 0
+    var coding: [String: Double] = [:]
+
+    private static let key = "bond"
+
+    static func load() -> Bond {
+        guard let data = UserDefaults.standard.data(forKey: key), let bond = try? JSONDecoder().decode(Bond.self, from: data) else { return Bond() }
+        return bond
+    }
+
+    static func day(_ date: Date = Date()) -> String {
+        ISO8601DateFormatter.string(from: date, timeZone: .current, formatOptions: [.withFullDate])
+    }
+
+    static func gap(from day: String, to other: String) -> Int? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withFullDate]
+        f.timeZone = .current
+        guard let a = f.date(from: day), let b = f.date(from: other) else { return nil }
+        return Calendar.current.dateComponents([.day], from: a, to: b).day
+    }
+
+    var codingToday: Double { coding[Self.day()] ?? 0 }
+
+    mutating func save() {
+        coding = coding.filter { Self.gap(from: $0.key, to: Self.day()).map { $0 < 14 } ?? false }
+        if let data = try? JSONEncoder().encode(self) { UserDefaults.standard.set(data, forKey: Self.key) }
+    }
+}
+
 enum Lines {
-    static func ambient(context: Context, digest: Digest?, grump: Int, now: Date = Date()) -> [String] {
+    static func greeting(name: String, streak: Int, gap: Int?, hour: Int) -> String {
+        if let gap, gap >= 3 { return "Oh. You're alive, \(name)." }
+        if streak >= 3 && Bool.random() { return "Day \(streak). Back again, \(name)." }
+        switch hour {
+        case 0..<5: return "Still up, \(name)?"
+        case 5..<12: return "Wake up, \(name)…"
+        case 12..<17: return "Afternoon, \(name). Late start."
+        default: return "Evening, \(name). Finally."
+        }
+    }
+
+    static func ambient(context: Context, digest: Digest?, grump: Int, bond: Bond, now: Date = Date()) -> [String] {
         var out: [String] = []
         let hour = context.hour
         let appHours = now.timeIntervalSince(context.appSince) / 3600
@@ -132,7 +177,14 @@ enum Lines {
                 if Calendar.current.isDateInToday(date) && date > now { out.append("\(item.what) today. Don't forget.") }
             }
             if digest.insights.isEmpty { out.append("Nothing's on fire. Enjoy it.") }
+            if let plan = digest.plan, plan.date == Bond.day() {
+                out += plan.lines
+                if let next = plan.focus.first, plan.done == nil, hour >= 12 { out.append("\(next). Still on the list.") }
+            }
         }
+        if bond.codingToday > 7200 { out.append("\(Int(bond.codingToday / 3600))h of code today. Not bad.") }
+        if bond.streak >= 3 { out.append("Day \(bond.streak) in a row. Clingy.") }
+        if bond.affection >= 7 { out += ["Not that I missed you.", "You're tolerable today."] }
         if grump >= 2 { out += ["Still ignoring me? Cool.", "I see how it is."] }
         if out.isEmpty { out = ["I'm watching. Casually.", "Carry on.", "Hm."] }
         return out

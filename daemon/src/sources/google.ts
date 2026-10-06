@@ -6,7 +6,7 @@ const TOKEN_FILE = 'google.json';
 const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/calendar.readonly'];
 const REDIRECT = `http://${HOST}:${PORT}/auth/google/callback`;
 const MAIL_QUERY = 'newer_than:2d -category:promotions -category:social -in:chats';
-const MAX_MAILS = 25;
+const MAX_MAILS = 20;
 const MAX_CHARS = 280;
 
 interface Tokens {
@@ -22,8 +22,23 @@ function b64url(buf: Buffer): string {
   return buf.toString('base64url');
 }
 
+function accounts(): Tokens[] {
+  const raw = readJson<Tokens | { accounts: Tokens[] }>(TOKEN_FILE);
+  if (!raw) return [];
+  return ('accounts' in raw ? raw.accounts : [raw]).filter((t) => t.refreshToken);
+}
+
+function save(tokens: Tokens): void {
+  const rest = accounts().filter((t) => !tokens.email || t.email !== tokens.email);
+  writeJson(TOKEN_FILE, { accounts: [...rest, tokens] });
+}
+
 export function googleLinked(): boolean {
-  return Boolean(readJson<Tokens>(TOKEN_FILE)?.refreshToken);
+  return accounts().length > 0;
+}
+
+export function googleAccounts(): string[] {
+  return accounts().map((t) => t.email ?? 'unknown');
 }
 
 export function googleAuthUrl(config: Config): string | null {
@@ -37,7 +52,7 @@ export function googleAuthUrl(config: Config): string | null {
     response_type: 'code',
     scope: SCOPES.join(' '),
     access_type: 'offline',
-    prompt: 'consent',
+    prompt: 'consent select_account',
     state,
     code_challenge: b64url(createHash('sha256').update(verifier).digest()),
     code_challenge_method: 'S256',
@@ -65,22 +80,21 @@ export async function googleCallback(config: Config, code: string, state: string
   const tokens: Tokens = { accessToken: t.access_token, refreshToken: t.refresh_token, expiresAt: Date.now() + t.expires_in * 1000 };
   const profile = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers: { authorization: `Bearer ${tokens.accessToken}` } });
   if (profile.ok) tokens.email = ((await profile.json()) as { emailAddress?: string }).emailAddress;
-  writeJson(TOKEN_FILE, tokens);
+  save(tokens);
   return tokens.email ?? 'your Google account';
 }
 
-async function accessToken(config: Config): Promise<string> {
-  const tokens = readJson<Tokens>(TOKEN_FILE);
-  if (!tokens?.refreshToken) throw new Error('Google not linked');
+async function accessToken(config: Config, tokens: Tokens): Promise<string> {
   if (tokens.expiresAt - 60_000 > Date.now()) return tokens.accessToken;
   const t = await tokenRequest(config, { refresh_token: tokens.refreshToken, grant_type: 'refresh_token' });
   const next = { ...tokens, accessToken: t.access_token, expiresAt: Date.now() + t.expires_in * 1000 };
-  writeJson(TOKEN_FILE, next);
+  save(next);
+  Object.assign(tokens, next);
   return next.accessToken;
 }
 
-async function api<T>(config: Config, url: string): Promise<T> {
-  const res = await fetch(url, { headers: { authorization: `Bearer ${await accessToken(config)}` } });
+async function api<T>(config: Config, tokens: Tokens, url: string): Promise<T> {
+  const res = await fetch(url, { headers: { authorization: `Bearer ${await accessToken(config, tokens)}` } });
   if (!res.ok) throw new Error(`${new URL(url).hostname} ${res.status}`);
   return (await res.json()) as T;
 }
@@ -103,12 +117,23 @@ interface GmailMessage {
   payload?: { headers?: { name: string; value: string }[] };
 }
 
+async function each(config: Config, source: SourceResult['source'], read: (tokens: Tokens, label: string) => Promise<SourceItem[]>): Promise<SourceResult> {
+  const linked = accounts();
+  const many = linked.length > 1;
+  const results = await Promise.allSettled(linked.map((t) => read(t, many ? ` (${t.email ?? 'account'})` : '')));
+  const items = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+  const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [`${linked[i].email ?? 'account'}: ${(r.reason as Error).message}`] : []));
+  if (failed.length === results.length) return { source, ok: false, error: failed.join('; '), items: [] };
+  return { source, ok: true, error: failed.length ? failed.join('; ') : undefined, items };
+}
+
 export async function readGmail(config: Config): Promise<SourceResult> {
   if (!config.google) return { source: 'mail', ok: false, error: 'Add a Google OAuth client to ~/.trinity/config.json', items: [] };
   if (!googleLinked()) return { source: 'mail', ok: false, error: `Sign in at http://${HOST}:${PORT}/auth/google`, items: [] };
-  try {
+  return each(config, 'mail', async (tokens, label) => {
     const list = await api<{ messages?: { id: string }[] }>(
       config,
+      tokens,
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?${new URLSearchParams({ q: MAIL_QUERY, maxResults: String(MAX_MAILS) })}`
     );
     const ids = (list.messages ?? []).map((m) => m.id);
@@ -116,11 +141,12 @@ export async function readGmail(config: Config): Promise<SourceResult> {
       ids.map((id) =>
         api<GmailMessage>(
           config,
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`
+          tokens,
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=List-Id&metadataHeaders=List-Unsubscribe&metadataHeaders=Precedence`
         )
       )
     );
-    const items: SourceItem[] = messages.map((m) => {
+    return messages.map((m): SourceItem => {
       const header = (name: string) => m.payload?.headers?.find((h) => h.name.toLowerCase() === name)?.value ?? '';
       const from = header('from').replace(/\s*<[^>]+>/u, '').replace(/"/gu, '') || header('from');
       return {
@@ -128,16 +154,16 @@ export async function readGmail(config: Config): Promise<SourceResult> {
         ref: `mail:${m.id}`,
         at: Number(m.internalDate ?? Date.now()),
         from,
-        title: header('subject') || '(no subject)',
+        title: `${header('subject') || '(no subject)'}${label}`,
         text: clip(decodeEntities(m.snippet ?? '')),
         unread: m.labelIds?.includes('UNREAD') ?? false,
-        url: `https://mail.google.com/mail/u/0/#all/${m.threadId}`,
+        address: /<([^>]+)>/u.exec(header('from'))?.[1] ?? header('from'),
+        folders: (m.labelIds ?? []).filter((l) => l.startsWith('Label_')).length ? ['your label'] : [],
+        bulk: Boolean(header('list-id') || header('list-unsubscribe') || /bulk|list/iu.test(header('precedence'))),
+        url: `https://mail.google.com/mail/?authuser=${encodeURIComponent(tokens.email ?? '')}#all/${m.threadId}`,
       };
     });
-    return { source: 'mail', ok: true, items };
-  } catch (err) {
-    return { source: 'mail', ok: false, error: (err as Error).message, items: [] };
-  }
+  });
 }
 
 interface CalendarEvent {
@@ -152,11 +178,12 @@ interface CalendarEvent {
 
 export async function readCalendar(config: Config): Promise<SourceResult> {
   if (!config.google || !googleLinked()) return { source: 'calendar', ok: false, error: 'Google not linked', items: [] };
-  try {
+  return each(config, 'calendar', async (tokens, label) => {
     const now = new Date();
     const end = new Date(now.getTime() + 36 * 3600_000);
     const res = await api<{ items?: CalendarEvent[] }>(
       config,
+      tokens,
       `https://www.googleapis.com/calendar/v3/calendars/primary/events?${new URLSearchParams({
         timeMin: now.toISOString(),
         timeMax: end.toISOString(),
@@ -165,7 +192,7 @@ export async function readCalendar(config: Config): Promise<SourceResult> {
         maxResults: '15',
       })}`
     );
-    const items: SourceItem[] = (res.items ?? []).map((e) => {
+    return (res.items ?? []).map((e): SourceItem => {
       const startRaw = e.start?.dateTime ?? e.start?.date ?? now.toISOString();
       const start = new Date(startRaw);
       const when = e.start?.dateTime
@@ -177,13 +204,10 @@ export async function readCalendar(config: Config): Promise<SourceResult> {
         ref: `cal:${e.id}`,
         at: start.getTime(),
         from: 'calendar',
-        title: e.summary ?? '(untitled event)',
+        title: `${e.summary ?? '(untitled event)'}${label}`,
         text: [when, e.location, mine && mine !== 'accepted' ? `you: ${mine}` : ''].filter(Boolean).join(' · '),
         url: e.htmlLink,
       };
     });
-    return { source: 'calendar', ok: true, items };
-  } catch (err) {
-    return { source: 'calendar', ok: false, error: (err as Error).message, items: [] };
-  }
+  });
 }
