@@ -7,8 +7,6 @@ Trinity is a personal assistant hub. Tools plug into it; the first is [Morpheus]
 ### setup
 
 ```bash
-# once: expose morpheus/client to Trinity
-cd ../morpheus && bun link
 cd ../trinity && bun install
 
 bun dev          # http://localhost:6070 (also reachable over LAN / Tailscale)
@@ -21,6 +19,21 @@ bun run build    # static app in out/ (what Capacitor will bundle)
 2. In Trinity open Morpheus and enter the printed `ws://…` address and token (`~/.morpheus/daemon.json`).
 
 Or open a pairing link that fills both in: `http://<trinity-host>:6070/?url=ws://<laptop>:7878&token=<token>`. The token gives shell access to the laptop, so don't share it.
+
+### Android app
+
+The Android project lives in `android/`. Build and copy the static app with `bun run android:sync`, then create a shareable debug APK with `bun run android:apk`. The APK is at `android/app/build/outputs/apk/debug/app-debug.apk`. Send it to the phone and install it there; a USB connection is optional. The Android SDK and Java 21 are required for the native build. Android Studio is optional.
+
+For access away from home, put the Mac and phone on the same Tailscale network. Start `morpheus serve` and `bun run daemon` on the Mac, then expose their localhost ports privately with Tailscale Serve:
+
+```bash
+tailscale serve --bg --https=7878 7878
+tailscale serve --bg --https=7979 7979
+```
+
+In the Android app, connect Morpheus with `wss://<mac>.<tailnet>.ts.net:7878` and the token in `~/.morpheus/daemon.json`. On Brief, tap **Connection** and enter `https://<mac>.<tailnet>.ts.net:7979` and the token in `~/.trinity/daemon.json`. Keep both tokens private. The app stores both links on the phone so it can reconnect after reopening.
+
+The web version is deployed on Vercel at https://trinity-eosin.vercel.app from `main`. The APK loads that URL through Capacitor's `server.url`, so pushing to `main` updates both the site and the installed app on its next launch. The app needs a network connection to open. Changes to native code, Capacitor plugins, or `capacitor.config.ts`, including future phone CUA support, still need a new APK.
 
 ### what's there
 
@@ -65,4 +78,4 @@ bun run pet      # native macOS app
 
 ### notes
 
-- `morpheus/client` is TypeScript source in the sibling repo, compiled by Next via `transpilePackages`; `next.config.ts` widens the Turbopack root to the parent folder so the symlink resolves.
+- `morpheus/client` is TypeScript source from the pinned public Morpheus commit, compiled by Next via `transpilePackages`. To test unpublished local Morpheus changes, run `bun link` in `../morpheus`, then `bun link morpheus` in Trinity. Re-run `bun install` to restore the pinned dependency.
