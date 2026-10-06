@@ -110,7 +110,8 @@ Bun.serve({
       }
     }
 
-    if (!authorized(req) && !LOCAL_ORIGINS.has(req.headers.get('origin') ?? '')) return json(req, { error: 'unauthorized' }, 401);
+    const local = !req.headers.has('x-forwarded-for') && ALLOWED_HOSTS.has(req.headers.get('host') ?? '') && LOCAL_ORIGINS.has(req.headers.get('origin') ?? '');
+    if (!authorized(req) && !local) return json(req, { error: 'unauthorized' }, 401);
 
     if (url.pathname === '/digest' && req.method === 'GET') {
       const cached = cachedDigest();
